@@ -8,7 +8,6 @@ Ombor xizmati Telegram boti — mijoz va xodimlar uchun tez ariza, guruhda qabul
 - 🙋 Iltimos, xizmat ko'rsating (tez chaqiruv)
 - 👀 Ombordagi mijozga qarang (tez chaqiruv)
 - 📦 Tovar buyurtma
-- 📋 Mahsulot olib keling
 - ℹ️ Savol
 
 **Guruh (ombor jamoasi):**

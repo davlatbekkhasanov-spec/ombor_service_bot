@@ -219,10 +219,6 @@ def prompt_for_type(request_type: str) -> str:
             "2. Pechenye — 4 quti\n\n"
             "Faqat matn yuboring."
         ),
-        "bring_product": (
-            "📋 <b>Mahsulot olib keling</b>\n\n"
-            "Qaysi mahsulot, qayerdan va qayerga kerakligini yozing."
-        ),
         "info": (
             "ℹ️ <b>Savol / ma'lumot</b>\n\n"
             "Savolingizni yozing — javob beramiz."
