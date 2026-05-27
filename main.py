@@ -3,6 +3,7 @@ import asyncio
 import sqlite3
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
+from aiogram.enums import ChatType
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -11,7 +12,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+
+
+def _parse_group_id() -> int | None:
+    raw = (os.getenv("GROUP_ID") or "").strip().strip('"').strip("'")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+GROUP_ID = _parse_group_id()
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -108,7 +121,16 @@ async def status(call: CallbackQuery):
     await call.answer()
 
 
-@dp.message(F.text.startswith(("Заявка:", "Хизмат:", "VIP:")))
+@dp.message(Command("id"))
+async def chat_id(message: Message):
+    await message.answer(
+        f"Chat ID: <code>{message.chat.id}</code>\n"
+        f"Turi: {message.chat.type}",
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text.startswith(("Заявка:", "Хизмат:", "VIP:")), F.chat.type == ChatType.PRIVATE)
 async def save_order(message: Message):
     conn = db()
     cur = conn.cursor()
@@ -132,13 +154,17 @@ async def save_order(message: Message):
 
     await message.answer(f"✅ Заявка қабул қилинди. Рақам: #{order_id}")
 
-    if ADMIN_CHAT_ID:
+    if GROUP_ID:
+        username = message.from_user.username
+        user_line = f"@{username}" if username else "—"
         await bot.send_message(
-            ADMIN_CHAT_ID,
+            GROUP_ID,
             f"🆕 Янги заявка #{order_id}\n\n"
             f"Кимдан: {message.from_user.full_name}\n"
-            f"Username: @{message.from_user.username}\n\n"
-            f"{message.text}"
+            f"Username: {user_line}\n"
+            f"User ID: <code>{message.from_user.id}</code>\n\n"
+            f"{message.text}",
+            parse_mode="HTML",
         )
 
 
@@ -163,6 +189,10 @@ async def orders(message: Message):
 
 async def main():
     db()
+    if GROUP_ID is None:
+        print("⚠️  GROUP_ID sozlanmagan — guruhga xabar yuborilmaydi. /id bilan ID oling.")
+    else:
+        print(f"✅ Guruhga xabarlar: {GROUP_ID}")
     await dp.start_polling(bot)
 
 
