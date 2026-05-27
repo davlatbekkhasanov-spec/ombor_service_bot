@@ -16,13 +16,33 @@ def status_label(code: str) -> str:
     return STATUSES.get(code, code)
 
 
-def _elapsed_minutes(assigned_at: str | None) -> int | None:
-    if not assigned_at:
-        return None
-    start = _parse_dt(assigned_at)
+def _elapsed_seconds(since: str | None) -> int | None:
+    start = _parse_dt(since)
     if not start:
         return None
-    return max(0, int((datetime.now() - start).total_seconds() // 60))
+    return max(0, int((datetime.now() - start).total_seconds()))
+
+
+def _format_clock(total_sec: int) -> str:
+    h, rem = divmod(total_sec, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def live_timer_line(since: str | None, label: str) -> str:
+    sec = _elapsed_seconds(since)
+    if sec is None:
+        return ""
+    return f"🟢 LIVE  {label}: <b>{_format_clock(sec)}</b>"
+
+
+def _elapsed_minutes(assigned_at: str | None) -> int | None:
+    sec = _elapsed_seconds(assigned_at)
+    if sec is None:
+        return None
+    return sec // 60
 
 
 def welcome_card() -> str:
@@ -42,23 +62,42 @@ def welcome_card() -> str:
     )
 
 
-def order_card(order: dict, *, for_group: bool = False) -> str:
+def order_card(order: dict, *, for_group: bool = False, live: bool = False) -> str:
     username = order.get("username")
     user_line = f"@{username}" if username else "—"
     status = status_label(order["status"])
     lines = [
         f"<b>{_e(order['kind_label'])}</b>  #{order['id']}",
         f"Holat: {status}",
+    ]
+
+    if live and for_group and order["status"] in ("yangi", "jarayonda"):
+        lines.append("")
+        if order["status"] == "yangi":
+            wait = live_timer_line(order.get("created_at"), "⏳ Kutilyapti")
+            if wait:
+                lines.append(wait)
+        elif order["status"] == "jarayonda":
+            svc = live_timer_line(order.get("assigned_at"), "⏱ Xizmat vaqti")
+            if svc:
+                lines.append(svc)
+            created = _parse_dt(order.get("created_at"))
+            assigned = _parse_dt(order.get("assigned_at"))
+            if created and assigned:
+                queue_sec = max(0, int((assigned - created).total_seconds()))
+                lines.append(f"⏳ Navbatda kutgan: <b>{_format_clock(queue_sec)}</b>")
+
+    lines.extend([
         "",
         f"👤 Mijoz: {_e(order.get('full_name'))}",
         f"📱 {user_line}  ·  ID <code>{order['user_id']}</code>",
         f"🕐 Keldi: {_e(order.get('created_at'))}",
-    ]
+    ])
 
     assignee = order.get("assigned_to")
     if assignee:
         lines.append(f"👷 Xizmat ko'rsatyapti: <b>{_e(assignee)}</b>")
-        if order["status"] == "jarayonda":
+        if order["status"] == "jarayonda" and not live:
             elapsed = _elapsed_minutes(order.get("assigned_at"))
             if elapsed is not None:
                 lines.append(f"⏱ Hozir: <b>{elapsed} daqiqa</b>")

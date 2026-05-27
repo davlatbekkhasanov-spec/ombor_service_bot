@@ -35,10 +35,12 @@ def _parse_ids(raw: str | None) -> frozenset[int]:
 
 @lru_cache
 def settings() -> dict:
+    tick = _parse_int(os.getenv("TICK_SEC")) or 5
     return {
         "bot_token": os.getenv("BOT_TOKEN", ""),
         "group_id": _parse_int(os.getenv("GROUP_ID")),
         "admin_ids": _parse_ids(os.getenv("ADMIN_IDS")),
+        "tick_sec": max(3, min(tick, 60)),
     }
 
 

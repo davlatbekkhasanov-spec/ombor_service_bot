@@ -323,3 +323,30 @@ def stats_all_status() -> dict[str, int]:
     ).fetchall()
     conn.close()
     return {r["status"]: r["cnt"] for r in rows}
+
+
+def live_orders() -> list[dict[str, Any]]:
+    """Yangi va xizmatdagi — LIVE taymer yangilanadigan arizalar."""
+    conn = _conn()
+    rows = conn.execute(
+        """
+        SELECT * FROM orders
+        WHERE status IN ('yangi', 'jarayonda')
+          AND group_message_id IS NOT NULL
+        ORDER BY id ASC
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def any_live_orders() -> bool:
+    conn = _conn()
+    n = conn.execute(
+        """
+        SELECT COUNT(*) FROM orders
+        WHERE status IN ('yangi', 'jarayonda') AND group_message_id IS NOT NULL
+        """
+    ).fetchone()[0]
+    conn.close()
+    return n > 0

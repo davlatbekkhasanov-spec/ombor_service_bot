@@ -10,6 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Message
 
 from config import is_admin, settings
+from live_ticker import LiveTicker
 from keyboards import (
     INSTANT_TYPES,
     REQUEST_TYPES,
@@ -57,6 +58,7 @@ GROUP_ID = cfg["group_id"]
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+_ticker: LiveTicker | None = None
 
 
 class OrderForm(StatesGroup):
@@ -77,7 +79,7 @@ async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> N
         return
     try:
         await bot.edit_message_text(
-            order_card(order, for_group=True),
+            order_card(order, for_group=True, live=True),
             chat_id=GROUP_ID,
             message_id=msg_id,
             parse_mode="HTML",
@@ -94,12 +96,14 @@ async def _notify_group(order_id: int) -> Message | None:
     try:
         msg = await bot.send_message(
             GROUP_ID,
-            order_card(order, for_group=True),
+            order_card(order, for_group=True, live=True),
             parse_mode="HTML",
             reply_markup=group_actions(order_id, order),
         )
         set_group_message(order_id, msg.message_id)
         log.info("Guruhga #%s yuborildi", order_id)
+        if _ticker:
+            await _ticker.tick_once()
         return msg
     except Exception:
         log.exception("Guruhga yuborish xato #%s", order_id)
@@ -410,12 +414,17 @@ async def cmd_orders(message: Message):
 
 
 async def main():
+    global _ticker
     init_db()
     if GROUP_ID is None:
         log.warning("GROUP_ID sozlanmagan")
     else:
         log.info("Guruh: %s", GROUP_ID)
+        _ticker = LiveTicker(bot, GROUP_ID)
+        _ticker.start()
     await dp.start_polling(bot)
+    if _ticker:
+        _ticker.stop()
 
 
 if __name__ == "__main__":
