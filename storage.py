@@ -38,10 +38,17 @@ def _parse_dt(value: str | None) -> datetime | None:
 
 
 def minutes_between(start: str | None, end: str | None) -> int | None:
+    sec = seconds_between(start, end)
+    if sec is None:
+        return None
+    return sec // 60
+
+
+def seconds_between(start: str | None, end: str | None) -> int | None:
     s, e = _parse_dt(start), _parse_dt(end)
     if not s or not e:
         return None
-    return max(0, int((e - s).total_seconds() // 60))
+    return max(0, int((e - s).total_seconds()))
 
 
 def init_db() -> None:
@@ -63,6 +70,7 @@ def init_db() -> None:
             assigned_at TEXT,
             finished_at TEXT,
             service_minutes INTEGER,
+            service_seconds INTEGER,
             group_message_id INTEGER
         )
     """)
@@ -75,6 +83,7 @@ def init_db() -> None:
         ("assigned_at", "TEXT"),
         ("finished_at", "TEXT"),
         ("service_minutes", "INTEGER"),
+        ("service_seconds", "INTEGER"),
         ("group_message_id", "INTEGER"),
         ("accepted_by", "TEXT"),
         ("accepted_by_id", "INTEGER"),
@@ -195,15 +204,21 @@ def complete_order(
         return None, f"Faqat {order.get('assigned_to')} tugatishi mumkin"
 
     now = _now()
-    mins = minutes_between(order.get("assigned_at"), now) or 0
+    start_at = order.get("assigned_at") or order.get("created_at")
+    secs = seconds_between(start_at, now)
+    if secs is None:
+        secs = 0
+    if order.get("assigned_at") and secs == 0:
+        secs = 1
+    mins = max(1, (secs + 59) // 60) if secs > 0 else 0
     conn = _conn()
     conn.execute(
         """
         UPDATE orders
-        SET status='bajarildi', finished_at=?, service_minutes=?, updated_at=?
+        SET status='bajarildi', finished_at=?, service_seconds=?, service_minutes=?, updated_at=?
         WHERE id=? AND status='jarayonda' AND assigned_to_id=?
         """,
-        (now, mins, now, order_id, staff_id),
+        (now, secs, mins, now, order_id, staff_id),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
@@ -243,7 +258,7 @@ def user_orders(user_id: int, limit: int = 8) -> list[dict[str, Any]]:
     conn = _conn()
     rows = conn.execute(
         """
-        SELECT id, kind_label, status, created_at, assigned_to, service_minutes
+        SELECT id, kind_label, status, created_at, assigned_to, service_minutes, service_seconds
         FROM orders WHERE user_id=? ORDER BY id DESC LIMIT ?
         """,
         (user_id, limit),
@@ -257,7 +272,7 @@ def recent_orders(limit: int = 15) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT id, full_name, kind_label, status, created_at, text,
-               assigned_to, service_minutes
+               assigned_to, service_minutes, service_seconds
         FROM orders ORDER BY id DESC LIMIT ?
         """,
         (limit,),
@@ -287,8 +302,8 @@ def stats_today() -> dict[str, Any]:
     by_staff = conn.execute(
         """
         SELECT assigned_to, COUNT(*) AS cnt,
-               AVG(service_minutes) AS avg_min,
-               SUM(service_minutes) AS total_min
+               AVG(COALESCE(service_seconds, service_minutes * 60)) AS avg_sec,
+               SUM(COALESCE(service_seconds, service_minutes * 60)) AS total_sec
         FROM orders
         WHERE status='bajarildi' AND finished_at LIKE ? AND assigned_to IS NOT NULL
         GROUP BY assigned_to_id, assigned_to

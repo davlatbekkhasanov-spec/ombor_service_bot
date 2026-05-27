@@ -40,6 +40,7 @@ from ui import (
     notify_staff_completed,
     notify_user_status,
     order_card,
+    format_duration,
     prompt_for_type,
     report_all_card,
     report_staff_card,
@@ -341,7 +342,7 @@ async def cb_group_action(call: CallbackQuery):
             )
         except Exception:
             pass
-        await call.answer(f"Tugadi! {updated.get('service_minutes', 0)} daqiqa")
+        await call.answer(f"Tugadi! {format_duration(updated)}")
 
     elif action == "rad":
         order = get_order(order_id)
@@ -404,9 +405,11 @@ async def cmd_orders(message: Message):
     lines = ["📋 <b>Oxirgi arizalar</b>\n"]
     for r in rows:
         staff = f" · {escape(r['assigned_to'])}" if r.get("assigned_to") else ""
-        mins = f" · {r['service_minutes']}dk" if r.get("service_minutes") is not None else ""
+        dur = f" · {format_duration(r)}" if (
+            r.get("service_seconds") is not None or r.get("service_minutes") is not None
+        ) else ""
         lines.append(
-            f"#{r['id']} {status_label(r['status'])}{staff}{mins}\n"
+            f"#{r['id']} {status_label(r['status'])}{staff}{dur}\n"
             f"{escape(r['full_name'] or '—')} · {escape(r['kind_label'])}\n"
             f"{escape(r['text'][:100])}\n"
         )

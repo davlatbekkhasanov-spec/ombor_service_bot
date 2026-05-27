@@ -4,6 +4,7 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from storage import STATUSES
+from ui import format_duration
 
 REQUEST_TYPES = {
     "call_staff": ("🙋 Xizmat so'rovi", "Xizmat"),
@@ -65,9 +66,8 @@ def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> I
             )
     else:
         label = STATUSES.get(status, status)
-        mins = order.get("service_minutes")
-        if status == "bajarildi" and mins is not None:
-            label = f"✔️ {mins} daqiqa"
+        if status == "bajarildi":
+            label = f"✔️ {format_duration(order)}"
         kb.button(text=label, callback_data="noop")
     kb.adjust(1)
     return kb.as_markup()
