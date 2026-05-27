@@ -93,6 +93,17 @@ def init_db() -> None:
         except sqlite3.OperationalError:
             pass
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS order_staff (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            staff_id INTEGER NOT NULL,
+            staff_name TEXT NOT NULL,
+            joined_at TEXT NOT NULL,
+            is_lead INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(order_id, staff_id)
+        )
+    """)
+    conn.execute("""
         UPDATE orders SET assigned_to = accepted_by
         WHERE assigned_to IS NULL AND accepted_by IS NOT NULL
     """)
@@ -104,8 +115,71 @@ def init_db() -> None:
         UPDATE orders SET status = 'jarayonda'
         WHERE status = 'qabul'
     """)
+    # Eski arizalar — bitta xodimni jamoaga ko'chirish
+    conn.execute("""
+        INSERT OR IGNORE INTO order_staff (order_id, staff_id, staff_name, joined_at, is_lead)
+        SELECT id, assigned_to_id, assigned_to, COALESCE(assigned_at, created_at), 1
+        FROM orders
+        WHERE assigned_to_id IS NOT NULL AND assigned_to IS NOT NULL
+    """)
     conn.commit()
     conn.close()
+
+
+def get_order_staff(order_id: int) -> list[dict[str, Any]]:
+    conn = _conn()
+    rows = conn.execute(
+        """
+        SELECT staff_id, staff_name, joined_at, is_lead
+        FROM order_staff WHERE order_id=?
+        ORDER BY is_lead DESC, joined_at ASC
+        """,
+        (order_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _staff_names(staff: list[dict[str, Any]], fallback: str | None = None) -> str | None:
+    if staff:
+        return ", ".join(s["staff_name"] for s in staff)
+    return fallback
+
+
+def attach_staff(order: dict[str, Any]) -> dict[str, Any]:
+    out = dict(order)
+    staff = get_order_staff(order["id"])
+    out["staff"] = staff
+    out["staff_ids"] = {s["staff_id"] for s in staff}
+    out["staff_names"] = _staff_names(staff, order.get("assigned_to"))
+    return out
+
+
+def is_staff_on_order(order_id: int, staff_id: int) -> bool:
+    conn = _conn()
+    row = conn.execute(
+        "SELECT 1 FROM order_staff WHERE order_id=? AND staff_id=?",
+        (order_id, staff_id),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def _add_staff_member(
+    conn: sqlite3.Connection,
+    order_id: int,
+    staff_id: int,
+    staff_name: str,
+    *,
+    is_lead: bool = False,
+) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO order_staff (order_id, staff_id, staff_name, joined_at, is_lead)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (order_id, staff_id, staff_name, _now(), 1 if is_lead else 0),
+    )
 
 
 def create_order(
@@ -138,21 +212,35 @@ def get_order(order_id: int) -> dict[str, Any] | None:
     conn = _conn()
     row = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     conn.close()
-    return dict(row) if row else None
+    if not row:
+        return None
+    return attach_staff(dict(row))
 
 
-def staff_active_order(staff_id: int) -> dict[str, Any] | None:
+def staff_active_order(staff_id: int, except_order_id: int | None = None) -> dict[str, Any] | None:
     conn = _conn()
-    row = conn.execute(
-        """
-        SELECT * FROM orders
-        WHERE assigned_to_id=? AND status='jarayonda'
-        ORDER BY id DESC LIMIT 1
-        """,
-        (staff_id,),
-    ).fetchone()
+    if except_order_id:
+        row = conn.execute(
+            """
+            SELECT o.* FROM orders o
+            JOIN order_staff os ON os.order_id = o.id
+            WHERE os.staff_id=? AND o.status='jarayonda' AND o.id != ?
+            ORDER BY o.id DESC LIMIT 1
+            """,
+            (staff_id, except_order_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            SELECT o.* FROM orders o
+            JOIN order_staff os ON os.order_id = o.id
+            WHERE os.staff_id=? AND o.status='jarayonda'
+            ORDER BY o.id DESC LIMIT 1
+            """,
+            (staff_id,),
+        ).fetchone()
     conn.close()
-    return dict(row) if row else None
+    return attach_staff(dict(row)) if row else None
 
 
 def assign_to_staff(
@@ -164,12 +252,12 @@ def assign_to_staff(
     if not order:
         return None, "Ariza topilmadi"
     if order["status"] != "yangi":
-        if order.get("assigned_to"):
-            return None, f"Bu arizani {order['assigned_to']} band qilgan"
-        return None, "Bu ariza allaqachon yopilgan yoki band"
+        if order["status"] == "jarayonda":
+            return join_staff(order_id, staff_id, staff_name)
+        return None, "Bu ariza allaqachon yopilgan"
 
-    active = staff_active_order(staff_id)
-    if active and active["id"] != order_id:
+    active = staff_active_order(staff_id, except_order_id=order_id)
+    if active:
         return None, f"Siz #{active['id']} da xizmat ko'rsatyapsiz — avval tugating"
 
     now = _now()
@@ -183,12 +271,42 @@ def assign_to_staff(
         """,
         (staff_name, staff_id, now, now, order_id),
     )
+    _add_staff_member(conn, order_id, staff_id, staff_name, is_lead=True)
     conn.commit()
     row = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     conn.close()
-    if not row:
+    if not row or row["status"] != "jarayonda":
         return None, "Boshqa xodim oldin band qildi"
-    return dict(row), None
+    return attach_staff(dict(row)), None
+
+
+def join_staff(
+    order_id: int,
+    staff_id: int,
+    staff_name: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    order = get_order(order_id)
+    if not order:
+        return None, "Ariza topilmadi"
+    if order["status"] != "jarayonda":
+        return None, "Bu ariza xizmatda emas"
+    if is_staff_on_order(order_id, staff_id):
+        return None, "Siz allaqachon bu jamoadasiz"
+
+    active = staff_active_order(staff_id, except_order_id=order_id)
+    if active:
+        return None, f"Siz #{active['id']} da xizmat ko'rsatyapsiz — avval tugating"
+
+    conn = _conn()
+    _add_staff_member(conn, order_id, staff_id, staff_name, is_lead=False)
+    conn.execute(
+        "UPDATE orders SET updated_at=? WHERE id=?",
+        (_now(), order_id),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    conn.close()
+    return attach_staff(dict(row)), None
 
 
 def complete_order(
@@ -200,8 +318,8 @@ def complete_order(
         return None, "Ariza topilmadi"
     if order["status"] != "jarayonda":
         return None, "Bu ariza xizmatda emas"
-    if order.get("assigned_to_id") and order["assigned_to_id"] != staff_id:
-        return None, f"Faqat {order.get('assigned_to')} tugatishi mumkin"
+    if not is_staff_on_order(order_id, staff_id):
+        return None, "Avval «Qo'shilaman» yoki band qiling"
 
     now = _now()
     start_at = order.get("assigned_at") or order.get("created_at")
@@ -216,16 +334,16 @@ def complete_order(
         """
         UPDATE orders
         SET status='bajarildi', finished_at=?, service_seconds=?, service_minutes=?, updated_at=?
-        WHERE id=? AND status='jarayonda' AND assigned_to_id=?
+        WHERE id=? AND status='jarayonda'
         """,
-        (now, secs, mins, now, order_id, staff_id),
+        (now, secs, mins, now, order_id),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     conn.close()
     if not row or row["status"] != "bajarildi":
         return None, "Tugatib bo'lmadi"
-    return dict(row), None
+    return attach_staff(dict(row)), None
 
 
 def reject_order(order_id: int) -> dict[str, Any] | None:
@@ -278,10 +396,7 @@ def recent_orders(limit: int = 15) -> list[dict[str, Any]]:
         (limit,),
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
-
-
-def stats_today() -> dict[str, Any]:
+    return [attach_staff(dict(r)) for r in rows]
     today = datetime.now().strftime("%Y-%m-%d")
     conn = _conn()
     by_status = conn.execute(
@@ -301,12 +416,13 @@ def stats_today() -> dict[str, Any]:
     ).fetchall()
     by_staff = conn.execute(
         """
-        SELECT assigned_to, COUNT(*) AS cnt,
-               AVG(COALESCE(service_seconds, service_minutes * 60)) AS avg_sec,
-               SUM(COALESCE(service_seconds, service_minutes * 60)) AS total_sec
-        FROM orders
-        WHERE status='bajarildi' AND finished_at LIKE ? AND assigned_to IS NOT NULL
-        GROUP BY assigned_to_id, assigned_to
+        SELECT os.staff_name AS assigned_to, COUNT(DISTINCT os.order_id) AS cnt,
+               AVG(COALESCE(o.service_seconds, o.service_minutes * 60)) AS avg_sec,
+               SUM(COALESCE(o.service_seconds, o.service_minutes * 60)) AS total_sec
+        FROM order_staff os
+        JOIN orders o ON o.id = os.order_id
+        WHERE o.status='bajarildi' AND o.finished_at LIKE ?
+        GROUP BY os.staff_id, os.staff_name
         ORDER BY cnt DESC
         """,
         (f"{today}%",),
@@ -352,7 +468,7 @@ def live_orders() -> list[dict[str, Any]]:
         """
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [attach_staff(dict(r)) for r in rows]
 
 
 def any_live_orders() -> bool:

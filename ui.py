@@ -74,10 +74,12 @@ def customer_sent(order_id: int) -> str:
 
 
 def customer_done(order: dict) -> str:
-    staff = _e(order.get("assigned_to"))
+    staff = _e(order.get("staff_names") or order.get("assigned_to"))
+    n = len(order.get("staff") or [])
+    team = f" ({n} xodim)" if n > 1 else ""
     return (
         f"✅  <b>#{order['id']}</b> bajarildi\n"
-        f"👷  {staff}  ·  ⏱  {format_duration(order)}"
+        f"👷  {staff}{team}  ·  ⏱  {format_duration(order)}"
     )
 
 
@@ -117,9 +119,11 @@ def order_card(order: dict, *, for_group: bool = False, live: bool = False) -> s
         f"🕐 Keldi: {_e(order.get('created_at'))}",
     ])
 
-    assignee = order.get("assigned_to")
+    assignee = order.get("staff_names") or order.get("assigned_to")
     if assignee:
-        lines.append(f"👷 Xizmat ko'rsatyapti: <b>{_e(assignee)}</b>")
+        n = len(order.get("staff") or [])
+        label = "Jamoa" if n > 1 else "Xizmat ko'rsatyapti"
+        lines.append(f"👷 {label}: <b>{_e(assignee)}</b>")
         if order["status"] == "jarayonda" and not live:
             elapsed = _elapsed_minutes(order.get("assigned_at"))
             if elapsed is not None:
@@ -138,7 +142,7 @@ def order_card(order: dict, *, for_group: bool = False, live: bool = False) -> s
         if order["status"] == "yangi":
             lines.append("\n<i>👇 Bir xodim «Men xizmat ko'rsataman» deb band qilsin</i>")
         elif order["status"] == "jarayonda":
-            lines.append(f"\n<i>👇 {_e(assignee)} tugatganda «Xizmat tugadi» bosing</i>")
+            lines.append("\n<i>👇 Boshqa xodimlar «Qo'shilaman» deb qo'shiladi</i>")
 
     return "\n".join(lines)
 
@@ -199,10 +203,13 @@ def notify_staff_completed(order: dict) -> str:
 
 
 def service_done_group_card(order: dict) -> str:
+    staff = _e(order.get("staff_names") or order.get("assigned_to"))
+    n = len(order.get("staff") or [])
+    team_line = f" ({n} kishi)" if n > 1 else ""
     return (
         f"✅ <b>XIZMAT YAKUNLANDI</b>  #{order['id']}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"👷 Kim xizmat ko'rsatdi: <b>{_e(order.get('assigned_to'))}</b>\n"
+        f"👷 Jamoa{team_line}: <b>{staff}</b>\n"
         f"⏱ Vaqt: <b>{format_duration(order)}</b>\n"
         f"👤 Mijoz: {_e(order.get('full_name'))}\n"
         f"📦 {_e(order.get('kind_label'))}"

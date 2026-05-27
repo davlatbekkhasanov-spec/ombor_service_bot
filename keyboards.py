@@ -17,7 +17,6 @@ INSTANT_TYPES = frozenset({"call_staff", "check_client"})
 
 
 def _lbl(icon: str, text: str) -> str:
-    """Emoji + matn — ikonka yozuv yonida."""
     return f"{icon}  {text}"
 
 
@@ -41,21 +40,24 @@ def back_menu() -> InlineKeyboardMarkup:
 def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     status = order["status"]
-    assignee_id = order.get("assigned_to_id")
+    staff_ids = order.get("staff_ids") or set()
 
     if status == "yangi":
         kb.button(text=_lbl("👷", "Men xizmat ko'rsataman"), callback_data=f"act:{order_id}:band")
         kb.button(text=_lbl("❌", "Rad etish"), callback_data=f"act:{order_id}:rad")
         kb.adjust(2)
     elif status == "jarayonda":
-        if viewer_id is None or viewer_id == assignee_id:
+        on_team = viewer_id is not None and viewer_id in staff_ids
+        if viewer_id is None:
+            kb.button(text=_lbl("➕", "Qo'shilaman"), callback_data=f"act:{order_id}:qoshil")
             kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
+            kb.adjust(2)
+        elif on_team:
+            kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
+            kb.adjust(1)
         else:
-            kb.button(
-                text=_lbl("🔒", f"{order.get('assigned_to', 'Xodim')} xizmatda"),
-                callback_data="noop",
-            )
-        kb.adjust(1)
+            kb.button(text=_lbl("➕", "Qo'shilaman"), callback_data=f"act:{order_id}:qoshil")
+            kb.adjust(1)
     else:
         label = STATUSES.get(status, status)
         if status == "bajarildi":

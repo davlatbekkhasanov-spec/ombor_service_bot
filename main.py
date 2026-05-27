@@ -25,6 +25,7 @@ from storage import (
     create_order,
     get_order,
     init_db,
+    join_staff,
     recent_orders,
     reject_order,
     set_group_message,
@@ -262,6 +263,14 @@ async def cb_group_action(call: CallbackQuery):
         await _refresh_group_message(updated, staff_id)
         await call.answer(f"#{order_id} band qilindi")
 
+    elif action == "qoshil":
+        updated, err = join_staff(order_id, staff_id, staff_name)
+        if err:
+            await call.answer(err, show_alert=True)
+            return
+        await _refresh_group_message(updated, staff_id)
+        await call.answer(f"#{order_id} jamoaga qo'shildingiz")
+
     elif action == "tugadi":
         updated, err = complete_order(order_id, staff_id)
         if err:
@@ -347,7 +356,9 @@ async def cmd_orders(message: Message):
 
     lines = ["📋 <b>Oxirgi arizalar</b>\n"]
     for r in rows:
-        staff = f" · {escape(r['assigned_to'])}" if r.get("assigned_to") else ""
+        staff = f" · {escape(r.get('staff_names') or r.get('assigned_to') or '')}" if (
+            r.get("staff_names") or r.get("assigned_to")
+        ) else ""
         dur = f" · {format_duration(r)}" if (
             r.get("service_seconds") is not None or r.get("service_minutes") is not None
         ) else ""
