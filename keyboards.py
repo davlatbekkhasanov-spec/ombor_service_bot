@@ -40,14 +40,6 @@ def back_menu() -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def confirm_instant(request_type: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text=_lbl("✅", "Ha, yuborish"), callback_data=f"send:{request_type}")
-    kb.button(text=_lbl("◀️", "Bekor"), callback_data="menu")
-    kb.adjust(2)
-    return kb.as_markup()
-
-
 def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     status = order["status"]

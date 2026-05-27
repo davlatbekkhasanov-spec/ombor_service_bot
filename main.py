@@ -15,7 +15,6 @@ from keyboards import (
     INSTANT_TYPES,
     REQUEST_TYPES,
     back_menu,
-    confirm_instant,
     group_actions,
     main_menu,
     report_menu,
@@ -36,10 +35,7 @@ from ui import (
     customer_done,
     customer_rejected,
     customer_sent,
-    instant_confirm_text,
     instant_order_text,
-    notify_staff_assigned,
-    notify_staff_completed,
     order_card,
     format_duration,
     prompt_for_type,
@@ -190,11 +186,21 @@ async def cb_request_type(call: CallbackQuery, state: FSMContext):
         await call.answer("Noto'g'ri tanlov", show_alert=True)
         return
     if request_type in INSTANT_TYPES:
-        await call.message.answer(
-            instant_confirm_text(request_type),
-            parse_mode="HTML",
-            reply_markup=confirm_instant(request_type),
+        text = instant_order_text(request_type)
+        order_id, sent = await _create_order_for_user(
+            user_id=call.from_user.id,
+            username=call.from_user.username,
+            full_name=call.from_user.full_name,
+            request_type=request_type,
+            text=text,
         )
+        extra = "\n⚠️ Guruhga xabar ketmadi." if not sent else ""
+        await call.message.answer(
+            customer_sent(order_id) + extra,
+            parse_mode="HTML",
+            reply_markup=main_menu(),
+        )
+        await call.answer("Yuborildi!")
     else:
         await state.set_state(OrderForm.waiting_text)
         await state.update_data(request_type=request_type)
@@ -203,33 +209,7 @@ async def cb_request_type(call: CallbackQuery, state: FSMContext):
             parse_mode="HTML",
             reply_markup=back_menu(),
         )
-    await call.answer()
-
-
-@dp.callback_query(F.data.startswith("send:"))
-async def cb_send_instant(call: CallbackQuery, state: FSMContext):
-    await state.clear()
-    request_type = call.data.split(":", 1)[1]
-    if request_type not in INSTANT_TYPES:
-        await call.answer("Xato", show_alert=True)
-        return
-    text = instant_order_text(request_type)
-    order_id, sent = await _create_order_for_user(
-        user_id=call.from_user.id,
-        username=call.from_user.username,
-        full_name=call.from_user.full_name,
-        request_type=request_type,
-        text=text,
-    )
-    extra = ""
-    if not sent:
-        extra = "\n⚠️ Guruhga xabar ketmadi."
-    await call.message.answer(
-        customer_sent(order_id) + extra,
-        parse_mode="HTML",
-        reply_markup=main_menu(),
-    )
-    await call.answer("Yuborildi!")
+        await call.answer()
 
 
 @dp.message(StateFilter(OrderForm.waiting_text), F.chat.type == ChatType.PRIVATE, F.text)
@@ -280,16 +260,7 @@ async def cb_group_action(call: CallbackQuery):
             await call.answer(err, show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)
-        # Mijozga xabar yo'q — faqat tugaganda yoki rad etilganda
-        try:
-            await bot.send_message(
-                staff_id,
-                notify_staff_assigned(updated),
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
-        await call.answer(f"Siz #{order_id} ni band qildingiz!")
+        await call.answer(f"#{order_id} band qilindi")
 
     elif action == "tugadi":
         updated, err = complete_order(order_id, staff_id)
@@ -314,14 +285,6 @@ async def cb_group_action(call: CallbackQuery):
             )
         except Exception:
             log.warning("Mijozga tugatish xabari ketmadi")
-        try:
-            await bot.send_message(
-                staff_id,
-                notify_staff_completed(updated),
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
         await call.answer(f"Tugadi! {format_duration(updated)}")
 
     elif action == "rad":
