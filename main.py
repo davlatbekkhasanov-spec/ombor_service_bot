@@ -40,6 +40,7 @@ from ui import (
     instant_order_text,
     notify_staff_assigned,
     notify_staff_completed,
+    order_card,
     format_duration,
     prompt_for_type,
     report_all_card,
