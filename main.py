@@ -1,8 +1,5 @@
 import asyncio
 import logging
-import os
-import sqlite3
-from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatType
@@ -11,189 +8,120 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from dotenv import load_dotenv
 
-load_dotenv()
+from config import is_admin, settings
+from keyboards import (
+    INSTANT_TYPES,
+    REQUEST_TYPES,
+    back_menu,
+    confirm_instant,
+    group_actions,
+    main_menu,
+    report_menu,
+)
+from storage import (
+    create_order,
+    get_order,
+    init_db,
+    recent_orders,
+    set_group_message,
+    stats_all_status,
+    stats_today,
+    update_status,
+    user_orders,
+)
+from ui import (
+    instant_confirm_text,
+    instant_order_text,
+    notify_user_status,
+    order_card,
+    prompt_for_type,
+    report_all_card,
+    report_today_card,
+    user_orders_card,
+    welcome_card,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-
-def _parse_group_id() -> int | None:
-    raw = (os.getenv("GROUP_ID") or "").strip().strip('"').strip("'")
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        log.error("GROUP_ID noto'g'ri: %r", raw)
-        return None
-
-
-GROUP_ID = _parse_group_id()
+cfg = settings()
+BOT_TOKEN = cfg["bot_token"]
+GROUP_ID = cfg["group_id"]
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-
-DB_NAME = "orders.db"
-
-ORDER_KINDS = {
-    "new_order": ("📦 Заявка", "Заявка"),
-    "service": ("👷 Хизмат", "Хизмат"),
-    "vip": ("⭐ VIP", "VIP"),
-}
 
 
 class OrderForm(StatesGroup):
     waiting_text = State()
 
 
-def db():
-    conn = sqlite3.connect(DB_NAME)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            username TEXT,
-            full_name TEXT,
-            text TEXT,
-            status TEXT,
-            created_at TEXT
-        )
-    """)
-    conn.commit()
-    return conn
+def _is_group_chat(chat_id: int) -> bool:
+    return GROUP_ID is not None and chat_id == GROUP_ID
 
 
-def menu():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="📦 Заявка бериш", callback_data="new_order")
-    kb.button(text="👷 Ходим билан хизмат", callback_data="service")
-    kb.button(text="⭐ VIP / Срочно", callback_data="vip")
-    kb.button(text="📋 Статус", callback_data="status")
-    kb.adjust(1)
-    return kb.as_markup()
-
-
-def _order_prompt(kind_key: str) -> str:
-    if kind_key == "new_order":
-        return (
-            "📦 Заявка учун товарларни ёзинг.\n\n"
-            "Масалан:\n"
-            "1. Cola 1L — 12 dona\n"
-            "2. Pechenye — 4 quti\n\n"
-            "Faqat matn yuboring — «Заявка:» yozish shart emas."
-        )
-    if kind_key == "service":
-        return (
-            "👷 Ходим билан хизмат.\n\n"
-            "Нима кераклигини қисқача ёзинг.\n"
-            "Faqat matn yuboring — «Хизмат:» yozish shart emas."
-        )
-    return (
-        "⭐ VIP / Срочно.\n\n"
-        "Мижоз / бўлим / товарларни ёзинг.\n"
-        "Faqat matn yuboring — «VIP:» yozish shart emas."
-    )
-
-
-async def _save_and_notify(message: Message, order_text: str, kind_label: str) -> int:
-    conn = db()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO orders (user_id, username, full_name, text, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            message.from_user.id,
-            message.from_user.username,
-            message.from_user.full_name,
-            order_text,
-            "Янги",
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-        ),
-    )
-    order_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-
-    if not GROUP_ID:
-        log.warning("GROUP_ID yo'q — #%s guruhga yuborilmadi", order_id)
-        return order_id
-
-    username = message.from_user.username
-    user_line = f"@{username}" if username else "—"
-    group_text = (
-        f"🆕 {kind_label} #{order_id}\n\n"
-        f"Кимдан: {message.from_user.full_name}\n"
-        f"Username: {user_line}\n"
-        f"User ID: <code>{message.from_user.id}</code>\n\n"
-        f"{order_text}"
-    )
+async def _notify_group(order_id: int) -> Message | None:
+    order = get_order(order_id)
+    if not order or not GROUP_ID:
+        return None
     try:
-        await bot.send_message(GROUP_ID, group_text, parse_mode="HTML")
-        log.info("Guruhga yuborildi: #%s -> %s", order_id, GROUP_ID)
-    except Exception:
-        log.exception("Guruhga yuborish xato #%s, GROUP_ID=%s", order_id, GROUP_ID)
-        await message.answer(
-            "⚠️ Заявка saqlandi, lekin guruhga xabar ketmadi.\n"
-            "Bot guruhda admin ekanini va GROUP_ID to'g'riligini tekshiring."
+        msg = await bot.send_message(
+            GROUP_ID,
+            order_card(order, for_group=True),
+            parse_mode="HTML",
+            reply_markup=group_actions(order_id, order["status"]),
         )
+        set_group_message(order_id, msg.message_id)
+        log.info("Guruhga #%s yuborildi", order_id)
+        return msg
+    except Exception:
+        log.exception("Guruhga yuborish xato #%s", order_id)
+        return None
 
-    return order_id
+
+async def _create_order_for_user(
+    *,
+    user_id: int,
+    username: str | None,
+    full_name: str | None,
+    request_type: str,
+    text: str,
+) -> tuple[int, bool]:
+    kind_label, prefix = REQUEST_TYPES[request_type]
+    body = text if text.startswith(prefix) else f"{prefix}:\n{text}"
+    order_id = create_order(
+        user_id=user_id,
+        username=username,
+        full_name=full_name,
+        request_type=request_type,
+        kind_label=kind_label,
+        text=body,
+    )
+    sent = await _notify_group(order_id) is not None
+    return order_id, sent
 
 
 @dp.message(CommandStart())
-async def start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(
-        "Ассалому алайкум!\n\n"
-        "Омбор хизмати боти.\n"
-        "Керакли режимни танланг:",
-        reply_markup=menu(),
-    )
+    await message.answer(welcome_card(), parse_mode="HTML", reply_markup=main_menu())
 
 
 @dp.message(Command("cancel"))
-async def cancel(message: Message, state: FSMContext):
+async def cmd_cancel(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Bekor qilindi.", reply_markup=menu())
+    await message.answer("Bekor qilindi.", reply_markup=main_menu())
 
 
-@dp.callback_query(F.data.in_(ORDER_KINDS.keys()))
-async def pick_order_kind(call: CallbackQuery, state: FSMContext):
-    await state.set_state(OrderForm.waiting_text)
-    await state.update_data(kind=call.data)
-    await call.message.answer(_order_prompt(call.data))
-    await call.answer()
-
-
-@dp.callback_query(F.data == "status")
-async def status(call: CallbackQuery):
-    conn = db()
-    rows = conn.execute(
-        "SELECT id, status, created_at FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 5",
-        (call.from_user.id,),
-    ).fetchall()
-    conn.close()
-
-    if not rows:
-        await call.message.answer("Ҳали заявка йўқ.")
-    else:
-        text = "Охирги заявкалар:\n\n"
-        for r in rows:
-            text += f"#{r[0]} — {r[1]} — {r[2]}\n"
-        await call.message.answer(text)
-
-    await call.answer()
+@dp.message(Command("menu"))
+async def cmd_menu(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Asosiy menyu:", reply_markup=main_menu())
 
 
 @dp.message(Command("id"))
-async def chat_id(message: Message):
+async def cmd_id(message: Message):
     await message.answer(
         f"Chat ID: <code>{message.chat.id}</code>\n"
         f"Turi: {message.chat.type}",
@@ -201,63 +129,225 @@ async def chat_id(message: Message):
     )
 
 
-@dp.message(StateFilter(OrderForm.waiting_text), F.chat.type == ChatType.PRIVATE, F.text)
-async def save_from_state(message: Message, state: FSMContext):
-    data = await state.get_data()
-    kind_key = data.get("kind", "new_order")
-    _, prefix = ORDER_KINDS.get(kind_key, ORDER_KINDS["new_order"])
-    kind_label, _ = ORDER_KINDS.get(kind_key, ORDER_KINDS["new_order"])
-    order_text = f"{prefix}:\n{message.text.strip()}"
-    order_id = await _save_and_notify(message, order_text, kind_label)
+@dp.message(Command("stat", "hisobot", "report"))
+async def cmd_report(message: Message):
+    if message.chat.type == ChatType.PRIVATE and not is_admin(message.from_user.id):
+        await message.answer("Hisobot faqat guruhda yoki admin uchun.")
+        return
+    if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
+        if not _is_group_chat(message.chat.id):
+            return
+    await message.answer(report_today_card(stats_today()), parse_mode="HTML", reply_markup=report_menu())
+
+
+@dp.callback_query(F.data == "menu")
+async def cb_menu(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    await message.answer(
-        f"✅ Заявка қабул қилинди. Рақам: #{order_id}",
-        reply_markup=menu(),
+    await call.message.answer("Asosiy menyu:", reply_markup=main_menu())
+    await call.answer()
+
+
+@dp.callback_query(F.data == "my_orders")
+async def cb_my_orders(call: CallbackQuery):
+    rows = user_orders(call.from_user.id)
+    await call.message.answer(
+        user_orders_card(rows),
+        parse_mode="HTML",
+        reply_markup=back_menu(),
     )
+    await call.answer()
 
 
-@dp.message(F.text.startswith(("Заявка:", "Хизмат:", "VIP:")), F.chat.type == ChatType.PRIVATE)
-async def save_order_with_prefix(message: Message, state: FSMContext):
-    await state.clear()
-    text = message.text.strip()
-    if text.startswith("VIP:"):
-        kind_label = "⭐ VIP"
-    elif text.startswith("Хизмат:"):
-        kind_label = "👷 Хизмат"
+@dp.callback_query(F.data == "noop")
+async def cb_noop(call: CallbackQuery):
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("req:"))
+async def cb_request_type(call: CallbackQuery, state: FSMContext):
+    request_type = call.data.split(":", 1)[1]
+    if request_type not in REQUEST_TYPES:
+        await call.answer("Noto'g'ri tanlov", show_alert=True)
+        return
+    if request_type in INSTANT_TYPES:
+        await call.message.answer(
+            instant_confirm_text(request_type),
+            parse_mode="HTML",
+            reply_markup=confirm_instant(request_type),
+        )
     else:
-        kind_label = "📦 Заявка"
-    order_id = await _save_and_notify(message, text, kind_label)
-    await message.answer(
-        f"✅ Заявка қабул қилинди. Рақам: #{order_id}",
-        reply_markup=menu(),
+        await state.set_state(OrderForm.waiting_text)
+        await state.update_data(request_type=request_type)
+        await call.message.answer(
+            prompt_for_type(request_type),
+            parse_mode="HTML",
+            reply_markup=back_menu(),
+        )
+    await call.answer()
+
+
+@dp.callback_query(F.data.startswith("send:"))
+async def cb_send_instant(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    request_type = call.data.split(":", 1)[1]
+    if request_type not in INSTANT_TYPES:
+        await call.answer("Xato", show_alert=True)
+        return
+    text = instant_order_text(request_type)
+    order_id, sent = await _create_order_for_user(
+        user_id=call.from_user.id,
+        username=call.from_user.username,
+        full_name=call.from_user.full_name,
+        request_type=request_type,
+        text=text,
     )
+    extra = ""
+    if not sent:
+        extra = "\n\n⚠️ Guruhga xabar ketmadi — GROUP_ID ni tekshiring."
+    await call.message.answer(
+        f"✅ Ariza yuborildi!\nRaqam: <b>#{order_id}</b>{extra}\n\n"
+        "Guruh javobini kuting — holat o'zgarganda xabar olasiz.",
+        parse_mode="HTML",
+        reply_markup=main_menu(),
+    )
+    await call.answer("Yuborildi!")
+
+
+@dp.message(StateFilter(OrderForm.waiting_text), F.chat.type == ChatType.PRIVATE, F.text)
+async def save_text_order(message: Message, state: FSMContext):
+    data = await state.get_data()
+    request_type = data.get("request_type", "product_order")
+    if request_type not in REQUEST_TYPES:
+        request_type = "product_order"
+    order_id, sent = await _create_order_for_user(
+        user_id=message.from_user.id,
+        username=message.from_user.username,
+        full_name=message.from_user.full_name,
+        request_type=request_type,
+        text=message.text.strip(),
+    )
+    await state.clear()
+    extra = ""
+    if not sent:
+        extra = "\n\n⚠️ Guruhga xabar ketmadi — GROUP_ID ni tekshiring."
+    await message.answer(
+        f"✅ Ariza qabul qilindi!\nRaqam: <b>#{order_id}</b>{extra}\n\n"
+        "Ombor guruhi tez orada ko'radi va qabul qiladi.",
+        parse_mode="HTML",
+        reply_markup=main_menu(),
+    )
+
+
+@dp.callback_query(F.data.startswith("act:"))
+async def cb_group_action(call: CallbackQuery):
+    if call.message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await call.answer("Faqat guruhda", show_alert=True)
+        return
+    if not _is_group_chat(call.message.chat.id):
+        await call.answer("Bu guruh emas", show_alert=True)
+        return
+
+    parts = call.data.split(":")
+    if len(parts) != 3:
+        await call.answer("Xato", show_alert=True)
+        return
+    order_id = int(parts[1])
+    new_status = parts[2]
+
+    order = get_order(order_id)
+    if not order:
+        await call.answer("Ariza topilmadi", show_alert=True)
+        return
+
+    if order["status"] in ("bajarildi", "rad") and new_status != order["status"]:
+        await call.answer("Bu ariza allaqachon yopilgan", show_alert=True)
+        return
+
+    actor = call.from_user.full_name or call.from_user.username or "Xodim"
+    updated = update_status(
+        order_id,
+        new_status,
+        actor_name=actor,
+        actor_id=call.from_user.id,
+    )
+    if not updated:
+        await call.answer("Xato", show_alert=True)
+        return
+
+    try:
+        await call.message.edit_text(
+            order_card(updated, for_group=True),
+            parse_mode="HTML",
+            reply_markup=group_actions(order_id, new_status),
+        )
+    except Exception:
+        log.exception("Guruh xabarini yangilash xato")
+
+    try:
+        await bot.send_message(
+            updated["user_id"],
+            notify_user_status(updated),
+            parse_mode="HTML",
+            reply_markup=main_menu(),
+        )
+    except Exception:
+        log.warning("Foydalanuvchiga xabar ketmadi user=%s", updated["user_id"])
+
+    labels = {
+        "qabul": "Qabul qilindi",
+        "jarayonda": "Jarayonda",
+        "bajarildi": "Bajarildi",
+        "rad": "Rad etildi",
+    }
+    await call.answer(labels.get(new_status, "Yangilandi"))
+
+
+@dp.callback_query(F.data.startswith("report:"))
+async def cb_report(call: CallbackQuery):
+    if call.message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
+        if not _is_group_chat(call.message.chat.id):
+            await call.answer("Ruxsat yo'q", show_alert=True)
+            return
+    elif not is_admin(call.from_user.id):
+        await call.answer("Admin uchun", show_alert=True)
+        return
+
+    kind = call.data.split(":", 1)[1]
+    if kind == "today":
+        text = report_today_card(stats_today())
+    else:
+        text = report_all_card(stats_all_status(), recent_orders(10))
+    await call.message.answer(text, parse_mode="HTML", reply_markup=report_menu())
+    await call.answer()
 
 
 @dp.message(Command("orders"))
-async def orders(message: Message):
-    conn = db()
-    rows = conn.execute(
-        "SELECT id, full_name, text, status, created_at FROM orders ORDER BY id DESC LIMIT 10"
-    ).fetchall()
-    conn.close()
-
-    if not rows:
-        await message.answer("Заявкalar yo'q.")
+async def cmd_orders(message: Message):
+    if not is_admin(message.from_user.id):
         return
+    rows = recent_orders(12)
+    if not rows:
+        await message.answer("Arizalar yo'q.")
+        return
+    from ui import status_label
+    from html import escape
 
-    text = "📋 Oxirgi заявkalar:\n\n"
+    lines = ["📋 <b>Oxirgi arizalar</b>\n"]
     for r in rows:
-        text += f"#{r[0]} | {r[3]} | {r[4]}\n{r[1]}: {r[2][:80]}\n\n"
-
-    await message.answer(text)
+        lines.append(
+            f"#{r['id']} {status_label(r['status'])}\n"
+            f"{escape(r['full_name'] or '—')} · {escape(r['kind_label'])}\n"
+            f"{escape(r['text'][:100])}\n"
+        )
+    await message.answer("\n".join(lines), parse_mode="HTML")
 
 
 async def main():
-    db()
+    init_db()
     if GROUP_ID is None:
-        log.warning("GROUP_ID sozlanmagan — guruhga xabar yuborilmaydi")
+        log.warning("GROUP_ID sozlanmagan")
     else:
-        log.info("Guruhga xabarlar: %s", GROUP_ID)
+        log.info("Guruh: %s", GROUP_ID)
     await dp.start_polling(bot)
 
 
