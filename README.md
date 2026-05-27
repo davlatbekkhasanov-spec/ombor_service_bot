@@ -9,8 +9,6 @@ Ombor xizmati Telegram boti — mijoz va xodimlar uchun tez ariza, guruhda qabul
 - 👀 Ombordagi mijozga qarang (tez chaqiruv)
 - 📦 Tovar buyurtma
 - 📋 Mahsulot olib keling
-- ⭐ VIP / Shoshilinch
-- ⚠️ Muammo / shikoyat
 - ℹ️ Savol
 - 📋 Mening arizalarim
 

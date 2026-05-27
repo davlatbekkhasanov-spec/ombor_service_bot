@@ -11,8 +11,6 @@ REQUEST_TYPES = {
     "check_client": ("👀 Mijozga qarang", "Mijoz"),
     "product_order": ("📦 Tovar buyurtma", "Buyurtma"),
     "bring_product": ("📋 Mahsulot olib keling", "Olib kelish"),
-    "vip": ("⭐ VIP / Shoshilinch", "VIP"),
-    "complaint": ("⚠️ Muammo", "Muammo"),
     "info": ("ℹ️ Savol", "Savol"),
 }
 
@@ -30,11 +28,9 @@ def main_menu() -> InlineKeyboardMarkup:
     kb.button(text=_lbl("👀", "Mijozga qarang"), callback_data="req:check_client")
     kb.button(text=_lbl("📦", "Tovar buyurtma"), callback_data="req:product_order")
     kb.button(text=_lbl("📋", "Olib keling"), callback_data="req:bring_product")
-    kb.button(text=_lbl("⭐", "VIP / Shoshilinch"), callback_data="req:vip")
-    kb.button(text=_lbl("⚠️", "Muammo"), callback_data="req:complaint")
     kb.button(text=_lbl("ℹ️", "Savol"), callback_data="req:info")
     kb.button(text=_lbl("📋", "Mening arizalarim"), callback_data="my_orders")
-    kb.adjust(2, 2, 2, 1, 1)
+    kb.adjust(2, 2, 1, 1)
     return kb.as_markup()
 
 

@@ -223,14 +223,6 @@ def prompt_for_type(request_type: str) -> str:
             "📋 <b>Mahsulot olib keling</b>\n\n"
             "Qaysi mahsulot, qayerdan va qayerga kerakligini yozing."
         ),
-        "vip": (
-            "⭐ <b>VIP / Shoshilinch</b>\n\n"
-            "Mijoz, bo'lim va tavarlar — qisqa va aniq yozing."
-        ),
-        "complaint": (
-            "⚠️ <b>Muammo / shikoyat</b>\n\n"
-            "Nima bo'lganini batafsil yozing."
-        ),
         "info": (
             "ℹ️ <b>Savol / ma'lumot</b>\n\n"
             "Savolingizni yozing — javob beramiz."
