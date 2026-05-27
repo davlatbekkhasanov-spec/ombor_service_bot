@@ -397,6 +397,9 @@ def recent_orders(limit: int = 15) -> list[dict[str, Any]]:
     ).fetchall()
     conn.close()
     return [attach_staff(dict(r)) for r in rows]
+
+
+def stats_today() -> dict[str, Any]:
     today = datetime.now().strftime("%Y-%m-%d")
     conn = _conn()
     by_status = conn.execute(
