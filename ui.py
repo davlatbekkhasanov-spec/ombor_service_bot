@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from html import escape
 
-from storage import STATUSES
+from storage import STATUSES, _parse_dt
 
 
 def _e(text: str | None) -> str:
@@ -13,6 +14,15 @@ def _e(text: str | None) -> str:
 
 def status_label(code: str) -> str:
     return STATUSES.get(code, code)
+
+
+def _elapsed_minutes(assigned_at: str | None) -> int | None:
+    if not assigned_at:
+        return None
+    start = _parse_dt(assigned_at)
+    if not start:
+        return None
+    return max(0, int((datetime.now() - start).total_seconds() // 60))
 
 
 def welcome_card() -> str:
@@ -40,17 +50,36 @@ def order_card(order: dict, *, for_group: bool = False) -> str:
         f"<b>{_e(order['kind_label'])}</b>  #{order['id']}",
         f"Holat: {status}",
         "",
-        f"👤 {_e(order.get('full_name'))}",
+        f"👤 Mijoz: {_e(order.get('full_name'))}",
         f"📱 {user_line}  ·  ID <code>{order['user_id']}</code>",
-        f"🕐 {_e(order.get('created_at'))}",
+        f"🕐 Keldi: {_e(order.get('created_at'))}",
     ]
-    if order.get("accepted_by"):
-        lines.append(f"👷 Javobgar: {_e(order['accepted_by'])}")
-    if order.get("updated_at") and order.get("updated_at") != order.get("created_at"):
-        lines.append(f"🔄 Yangilandi: {_e(order['updated_at'])}")
+
+    assignee = order.get("assigned_to")
+    if assignee:
+        lines.append(f"👷 Xizmat ko'rsatyapti: <b>{_e(assignee)}</b>")
+        if order["status"] == "jarayonda":
+            elapsed = _elapsed_minutes(order.get("assigned_at"))
+            if elapsed is not None:
+                lines.append(f"⏱ Hozir: <b>{elapsed} daqiqa</b>")
+        if order.get("assigned_at"):
+            lines.append(f"🔗 Band qilindi: {_e(order['assigned_at'][:16])}")
+
+    if order["status"] == "bajarildi":
+        mins = order.get("service_minutes")
+        if mins is not None:
+            lines.append(f"⏱ Xizmat vaqti: <b>{mins} daqiqa</b>")
+        if order.get("finished_at"):
+            lines.append(f"✅ Tugadi: {_e(order['finished_at'][:16])}")
+
     lines.extend(["", _e(order.get("text"))])
-    if for_group and order["status"] == "yangi":
-        lines.append("\n<i>👇 Qabul qiling yoki rad eting</i>")
+
+    if for_group:
+        if order["status"] == "yangi":
+            lines.append("\n<i>👇 Bir xodim «Men xizmat ko'rsataman» deb band qilsin</i>")
+        elif order["status"] == "jarayonda":
+            lines.append(f"\n<i>👇 {_e(assignee)} tugatganda «Xizmat tugadi» bosing</i>")
+
     return "\n".join(lines)
 
 
@@ -59,20 +88,66 @@ def user_orders_card(rows: list[dict]) -> str:
         return "📋 Hali ariza yo'q.\n\nTugmalardan birini tanlang."
     lines = ["📋 <b>Sizning arizalaringiz</b>\n"]
     for r in rows:
+        extra = ""
+        if r["status"] == "jarayonda" and r.get("assigned_to"):
+            extra = f"\n   👷 {_e(r['assigned_to'])} xizmat ko'rsatyapti"
+        elif r["status"] == "bajarildi" and r.get("service_minutes") is not None:
+            extra = f"\n   ⏱ {r['service_minutes']} daqiqa · 👷 {_e(r.get('assigned_to'))}"
         lines.append(
             f"#{r['id']}  {status_label(r['status'])}\n"
-            f"   {_e(r['kind_label'])} · {_e(r['created_at'])}"
+            f"   {_e(r['kind_label'])} · {_e(r['created_at'][:16])}{extra}"
         )
     return "\n".join(lines)
 
 
 def notify_user_status(order: dict) -> str:
+    lines = [
+        f"🔔 <b>Ariza #{order['id']}</b>",
+        f"Holat: {status_label(order['status'])}",
+        f"{_e(order['kind_label'])}",
+        "",
+    ]
+    if order.get("assigned_to"):
+        lines.append(f"👷 Xodim: <b>{_e(order['assigned_to'])}</b>")
+    if order["status"] == "jarayonda":
+        lines.append("Xodim sizga xizmat ko'rsatmoqda...")
+    if order["status"] == "bajarildi":
+        mins = order.get("service_minutes")
+        if mins is not None:
+            lines.append(f"⏱ Xizmat vaqti: <b>{mins} daqiqa</b>")
+        lines.append("Rahmat! Yana murojaat qiling.")
+    elif order["status"] == "rad":
+        lines.append("Ariza rad etildi. Qayta yuborishingiz mumkin.")
+    else:
+        lines.append("Savollar bo'lsa, ombor guruhiga murojaat qiling.")
+    return "\n".join(lines)
+
+
+def notify_staff_assigned(order: dict) -> str:
     return (
-        f"🔔 <b>Ariza #{order['id']}</b>\n"
-        f"Holat: {status_label(order['status'])}\n"
-        f"{_e(order['kind_label'])}\n\n"
-        + (f"👷 {_e(order.get('accepted_by'))}\n\n" if order.get("accepted_by") else "")
-        + "Savollar bo'lsa, ombor guruhiga murojaat qiling."
+        f"✅ Siz #{order['id']} ni band qildingiz!\n"
+        f"Mijoz: {_e(order.get('full_name'))}\n\n"
+        "Xizmat tugagach guruhda «Xizmat tugadi» bosing."
+    )
+
+
+def notify_staff_completed(order: dict) -> str:
+    mins = order.get("service_minutes", 0)
+    return (
+        f"✔️ #{order['id']} yakunlandi\n"
+        f"⏱ Siz {mins} daqiqa xizmat ko'rsatdingiz."
+    )
+
+
+def service_done_group_card(order: dict) -> str:
+    mins = order.get("service_minutes", 0)
+    return (
+        f"✅ <b>XIZMAT YAKUNLANDI</b>  #{order['id']}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"👷 Kim xizmat ko'rsatdi: <b>{_e(order.get('assigned_to'))}</b>\n"
+        f"⏱ Vaqt: <b>{mins} daqiqa</b>\n"
+        f"👤 Mijoz: {_e(order.get('full_name'))}\n"
+        f"📦 {_e(order.get('kind_label'))}"
     )
 
 
@@ -132,11 +207,11 @@ def instant_order_text(request_type: str) -> str:
 
 def report_today_card(stats: dict) -> str:
     lines = [
-        f"📊 <b>Bugungi hisobot</b>",
+        "📊 <b>Bugungi hisobot</b>",
         f"📅 {stats['date']}",
         "━━━━━━━━━━━━━━━━━━",
         f"Jami bugun: <b>{stats['total_today']}</b>",
-        f"Umumiy bazada: <b>{stats['total_all']}</b>",
+        f"Hozir xizmatda: <b>{stats['active_now']}</b>",
         "",
         "<b>Holat bo'yicha:</b>",
     ]
@@ -145,12 +220,39 @@ def report_today_card(stats: dict) -> str:
             lines.append(f"  {status_label(code)} — {cnt}")
     else:
         lines.append("  Bugun ariza yo'q")
-    lines.append("\n<b>Turi bo'yicha:</b>")
-    if stats["by_type"]:
-        for label, cnt in stats["by_type"]:
-            lines.append(f"  {_e(label)} — {cnt}")
+    lines.append("\n<b>👷 Xodimlar (bugun bajarilgan):</b>")
+    if stats["by_staff"]:
+        for s in stats["by_staff"]:
+            avg = int(s["avg_min"] or 0)
+            total = int(s["total_min"] or 0)
+            lines.append(
+                f"  <b>{_e(s['assigned_to'])}</b> — {s['cnt']} ta, "
+                f"o'rtacha {avg} dk, jami {total} dk"
+            )
     else:
-        lines.append("  —")
+        lines.append("  Hali yakunlangan xizmat yo'q")
+    return "\n".join(lines)
+
+
+def report_staff_card(stats: dict) -> str:
+    lines = [
+        "👷 <b>Xodimlar hisoboti</b>",
+        f"📅 {stats['date']}",
+        "━━━━━━━━━━━━━━━━━━",
+    ]
+    if not stats["by_staff"]:
+        lines.append("Bugun yakunlangan xizmat yo'q.")
+        return "\n".join(lines)
+    for i, s in enumerate(stats["by_staff"], 1):
+        avg = int(s["avg_min"] or 0)
+        total = int(s["total_min"] or 0)
+        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+        lines.append(
+            f"{medal} <b>{_e(s['assigned_to'])}</b>\n"
+            f"   Xizmatlar: {s['cnt']} ta\n"
+            f"   O'rtacha: {avg} daqiqa\n"
+            f"   Jami vaqt: {total} daqiqa\n"
+        )
     return "\n".join(lines)
 
 
@@ -161,7 +263,7 @@ def report_all_card(by_status: dict, recent: list[dict]) -> str:
         "<b>Barcha arizalar (holat):</b>",
     ]
     total = sum(by_status.values())
-    for code in ("yangi", "qabul", "jarayonda", "bajarildi", "rad"):
+    for code in ("yangi", "jarayonda", "bajarildi", "rad"):
         cnt = by_status.get(code, 0)
         if cnt:
             lines.append(f"  {status_label(code)} — {cnt}")
@@ -169,8 +271,10 @@ def report_all_card(by_status: dict, recent: list[dict]) -> str:
     if recent:
         lines.append("\n<b>Oxirgi arizalar:</b>")
         for r in recent[:8]:
+            staff = f" · 👷 {_e(r['assigned_to'])}" if r.get("assigned_to") else ""
+            mins = f" · ⏱ {r['service_minutes']} dk" if r.get("service_minutes") is not None else ""
             lines.append(
-                f"#{r['id']} {status_label(r['status'])} · {_e(r['kind_label'])}\n"
-                f"   {_e(r['full_name'])} · {_e(r['created_at'])}"
+                f"#{r['id']} {status_label(r['status'])}{staff}{mins}\n"
+                f"   {_e(r['full_name'])} · {_e(r['kind_label'])}"
             )
     return "\n".join(lines)

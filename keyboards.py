@@ -5,7 +5,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from storage import STATUSES
 
-# request_type -> (label, prefix for text)
 REQUEST_TYPES = {
     "call_staff": ("🙋 Xizmat so'rovi", "Xizmat"),
     "check_client": ("👀 Mijozga qarang", "Mijoz"),
@@ -48,27 +47,36 @@ def confirm_instant(request_type: str) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
-def group_actions(order_id: int, status: str) -> InlineKeyboardMarkup:
+def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    status = order["status"]
+    assignee_id = order.get("assigned_to_id")
+
     if status == "yangi":
-        kb.button(text="✅ Qabul qilish", callback_data=f"act:{order_id}:qabul")
-        kb.button(text="❌ Rad etish", callback_data=f"act:{order_id}:rad")
-    elif status == "qabul":
-        kb.button(text="🔄 Jarayonda", callback_data=f"act:{order_id}:jarayonda")
-        kb.button(text="✔️ Bajarildi", callback_data=f"act:{order_id}:bajarildi")
+        kb.button(text="👷 Men xizmat ko'rsataman", callback_data=f"act:{order_id}:band")
         kb.button(text="❌ Rad etish", callback_data=f"act:{order_id}:rad")
     elif status == "jarayonda":
-        kb.button(text="✔️ Bajarildi", callback_data=f"act:{order_id}:bajarildi")
-        kb.button(text="❌ Rad etish", callback_data=f"act:{order_id}:rad")
+        if viewer_id is None or viewer_id == assignee_id:
+            kb.button(text="✔️ Xizmat tugadi", callback_data=f"act:{order_id}:tugadi")
+        else:
+            kb.button(
+                text=f"🔒 {order.get('assigned_to', 'Xodim')} xizmatda",
+                callback_data="noop",
+            )
     else:
-        kb.button(text=f"Holat: {STATUSES.get(status, status)}", callback_data="noop")
-    kb.adjust(2)
+        label = STATUSES.get(status, status)
+        mins = order.get("service_minutes")
+        if status == "bajarildi" and mins is not None:
+            label = f"✔️ {mins} daqiqa"
+        kb.button(text=label, callback_data="noop")
+    kb.adjust(1)
     return kb.as_markup()
 
 
 def report_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.button(text="📊 Bugungi hisobot", callback_data="report:today")
+    kb.button(text="👷 Xodimlar bo'yicha", callback_data="report:staff")
     kb.button(text="📈 Umumiy holat", callback_data="report:all")
     kb.adjust(1)
     return kb.as_markup()

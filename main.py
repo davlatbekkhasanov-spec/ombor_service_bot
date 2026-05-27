@@ -20,24 +20,30 @@ from keyboards import (
     report_menu,
 )
 from storage import (
+    assign_to_staff,
+    complete_order,
     create_order,
     get_order,
     init_db,
     recent_orders,
+    reject_order,
     set_group_message,
     stats_all_status,
     stats_today,
-    update_status,
     user_orders,
 )
 from ui import (
     instant_confirm_text,
     instant_order_text,
+    notify_staff_assigned,
+    notify_staff_completed,
     notify_user_status,
     order_card,
     prompt_for_type,
     report_all_card,
+    report_staff_card,
     report_today_card,
+    service_done_group_card,
     user_orders_card,
     welcome_card,
 )
@@ -61,6 +67,26 @@ def _is_group_chat(chat_id: int) -> bool:
     return GROUP_ID is not None and chat_id == GROUP_ID
 
 
+def _staff_name(user) -> str:
+    return user.full_name or user.username or f"Xodim {user.id}"
+
+
+async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> None:
+    msg_id = order.get("group_message_id")
+    if not msg_id or not GROUP_ID:
+        return
+    try:
+        await bot.edit_message_text(
+            order_card(order, for_group=True),
+            chat_id=GROUP_ID,
+            message_id=msg_id,
+            parse_mode="HTML",
+            reply_markup=group_actions(order["id"], order, viewer_id),
+        )
+    except Exception:
+        log.exception("Guruh xabarini yangilash xato #%s", order["id"])
+
+
 async def _notify_group(order_id: int) -> Message | None:
     order = get_order(order_id)
     if not order or not GROUP_ID:
@@ -70,7 +96,7 @@ async def _notify_group(order_id: int) -> Message | None:
             GROUP_ID,
             order_card(order, for_group=True),
             parse_mode="HTML",
-            reply_markup=group_actions(order_id, order["status"]),
+            reply_markup=group_actions(order_id, order),
         )
         set_group_message(order_id, msg.message_id)
         log.info("Guruhga #%s yuborildi", order_id)
@@ -206,7 +232,7 @@ async def cb_send_instant(call: CallbackQuery, state: FSMContext):
         extra = "\n\n⚠️ Guruhga xabar ketmadi — GROUP_ID ni tekshiring."
     await call.message.answer(
         f"✅ Ariza yuborildi!\nRaqam: <b>#{order_id}</b>{extra}\n\n"
-        "Guruh javobini kuting — holat o'zgarganda xabar olasiz.",
+        "Xodim tez orada sizga xizmat ko'rsatadi.",
         parse_mode="HTML",
         reply_markup=main_menu(),
     )
@@ -232,7 +258,7 @@ async def save_text_order(message: Message, state: FSMContext):
         extra = "\n\n⚠️ Guruhga xabar ketmadi — GROUP_ID ni tekshiring."
     await message.answer(
         f"✅ Ariza qabul qilindi!\nRaqam: <b>#{order_id}</b>{extra}\n\n"
-        "Ombor guruhi tez orada ko'radi va qabul qiladi.",
+        "Ombor xodimi tez orada band qiladi.",
         parse_mode="HTML",
         reply_markup=main_menu(),
     )
@@ -252,54 +278,89 @@ async def cb_group_action(call: CallbackQuery):
         await call.answer("Xato", show_alert=True)
         return
     order_id = int(parts[1])
-    new_status = parts[2]
+    action = parts[2]
+    staff_id = call.from_user.id
+    staff_name = _staff_name(call.from_user)
 
-    order = get_order(order_id)
-    if not order:
-        await call.answer("Ariza topilmadi", show_alert=True)
-        return
+    if action == "band":
+        updated, err = assign_to_staff(order_id, staff_id, staff_name)
+        if err:
+            await call.answer(err, show_alert=True)
+            return
+        await _refresh_group_message(updated, staff_id)
+        try:
+            await bot.send_message(
+                updated["user_id"],
+                notify_user_status(updated),
+                parse_mode="HTML",
+            )
+        except Exception:
+            log.warning("Mijozga xabar ketmadi")
+        try:
+            await bot.send_message(
+                staff_id,
+                notify_staff_assigned(updated),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        await call.answer(f"Siz #{order_id} ni band qildingiz!")
 
-    if order["status"] in ("bajarildi", "rad") and new_status != order["status"]:
-        await call.answer("Bu ariza allaqachon yopilgan", show_alert=True)
-        return
+    elif action == "tugadi":
+        updated, err = complete_order(order_id, staff_id)
+        if err:
+            await call.answer(err, show_alert=True)
+            return
+        await _refresh_group_message(updated, staff_id)
+        try:
+            await bot.send_message(
+                GROUP_ID,
+                service_done_group_card(updated),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        try:
+            await bot.send_message(
+                updated["user_id"],
+                notify_user_status(updated),
+                parse_mode="HTML",
+                reply_markup=main_menu(),
+            )
+        except Exception:
+            log.warning("Mijozga tugatish xabari ketmadi")
+        try:
+            await bot.send_message(
+                staff_id,
+                notify_staff_completed(updated),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        await call.answer(f"Tugadi! {updated.get('service_minutes', 0)} daqiqa")
 
-    actor = call.from_user.full_name or call.from_user.username or "Xodim"
-    updated = update_status(
-        order_id,
-        new_status,
-        actor_name=actor,
-        actor_id=call.from_user.id,
-    )
-    if not updated:
-        await call.answer("Xato", show_alert=True)
-        return
-
-    try:
-        await call.message.edit_text(
-            order_card(updated, for_group=True),
-            parse_mode="HTML",
-            reply_markup=group_actions(order_id, new_status),
-        )
-    except Exception:
-        log.exception("Guruh xabarini yangilash xato")
-
-    try:
-        await bot.send_message(
-            updated["user_id"],
-            notify_user_status(updated),
-            parse_mode="HTML",
-            reply_markup=main_menu(),
-        )
-    except Exception:
-        log.warning("Foydalanuvchiga xabar ketmadi user=%s", updated["user_id"])
-
-    labels = {
-        "qabul": "Qabul qilindi",
-        "jarayonda": "Jarayonda",
-        "bajarildi": "Bajarildi",
-        "rad": "Rad etildi",
-    }
-    await call.answer(labels.get(new_status, "Yangilandi"))
+    elif action == "rad":
+        order = get_order(order_id)
+        if order and order["status"] != "yangi":
+            await call.answer("Faqat yangi arizani rad etish mumkin", show_alert=True)
+            return
+        updated = reject_order(order_id)
+        if not updated:
+            await call.answer("Rad etib bo'lmadi", show_alert=True)
+            return
+        await _refresh_group_message(updated, staff_id)
+        try:
+            await bot.send_message(
+                updated["user_id"],
+                notify_user_status(updated),
+                parse_mode="HTML",
+                reply_markup=main_menu(),
+            )
+        except Exception:
+            pass
+        await call.answer("Rad etildi")
+    else:
+        await call.answer("Noma'lum amal", show_alert=True)
 
 
 @dp.callback_query(F.data.startswith("report:"))
@@ -313,8 +374,11 @@ async def cb_report(call: CallbackQuery):
         return
 
     kind = call.data.split(":", 1)[1]
+    stats = stats_today()
     if kind == "today":
-        text = report_today_card(stats_today())
+        text = report_today_card(stats)
+    elif kind == "staff":
+        text = report_staff_card(stats)
     else:
         text = report_all_card(stats_all_status(), recent_orders(10))
     await call.message.answer(text, parse_mode="HTML", reply_markup=report_menu())
@@ -329,13 +393,16 @@ async def cmd_orders(message: Message):
     if not rows:
         await message.answer("Arizalar yo'q.")
         return
-    from ui import status_label
     from html import escape
+
+    from ui import status_label
 
     lines = ["📋 <b>Oxirgi arizalar</b>\n"]
     for r in rows:
+        staff = f" · {escape(r['assigned_to'])}" if r.get("assigned_to") else ""
+        mins = f" · {r['service_minutes']}dk" if r.get("service_minutes") is not None else ""
         lines.append(
-            f"#{r['id']} {status_label(r['status'])}\n"
+            f"#{r['id']} {status_label(r['status'])}{staff}{mins}\n"
             f"{escape(r['full_name'] or '—')} · {escape(r['kind_label'])}\n"
             f"{escape(r['text'][:100])}\n"
         )

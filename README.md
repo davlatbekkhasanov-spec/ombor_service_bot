@@ -15,9 +15,10 @@ Ombor xizmati Telegram boti — mijoz va xodimlar uchun tez ariza, guruhda qabul
 - 📋 Mening arizalarim
 
 **Guruh (ombor jamoasi):**
-- Har bir ariza uchun tugmalar: **Qabul qilish**, **Jarayonda**, **Bajarildi**, **Rad etish**
-- Holat o'zgarganda mijozga avtomatik xabar
-- `/stat`, `/hisobot`, `/report` — kunlik va umumiy hisobot
+- **👷 Men xizmat ko'rsataman** — xodim arizani band qiladi (boshqasi ololmaydi)
+- **✔️ Xizmat tugadi** — faqat band qilgan xodim tugatadi
+- Avtomatik: **kim xizmat ko'rsatdi** + **necha daqiqa** hisoblanadi
+- `/stat`, `/hisobot` — xodimlar bo'yicha hisobot ham bor
 
 ## Railway variables
 
