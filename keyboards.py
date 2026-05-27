@@ -29,8 +29,7 @@ def main_menu() -> InlineKeyboardMarkup:
     kb.button(text=_lbl("📦", "Tovar buyurtma"), callback_data="req:product_order")
     kb.button(text=_lbl("📋", "Olib keling"), callback_data="req:bring_product")
     kb.button(text=_lbl("ℹ️", "Savol"), callback_data="req:info")
-    kb.button(text=_lbl("📋", "Mening arizalarim"), callback_data="my_orders")
-    kb.adjust(2, 2, 1, 1)
+    kb.adjust(2, 2, 1)
     return kb.as_markup()
 
 

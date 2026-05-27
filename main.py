@@ -31,7 +31,6 @@ from storage import (
     set_group_message,
     stats_all_status,
     stats_today,
-    user_orders,
 )
 from ui import (
     customer_done,
@@ -41,14 +40,12 @@ from ui import (
     instant_order_text,
     notify_staff_assigned,
     notify_staff_completed,
-    order_card,
     format_duration,
     prompt_for_type,
     report_all_card,
     report_staff_card,
     report_today_card,
     service_done_group_card,
-    user_orders_card,
     welcome_card,
 )
 
@@ -177,17 +174,6 @@ async def cmd_report(message: Message):
 async def cb_menu(call: CallbackQuery, state: FSMContext):
     await state.clear()
     await call.message.answer("Asosiy menyu:", reply_markup=main_menu())
-    await call.answer()
-
-
-@dp.callback_query(F.data == "my_orders")
-async def cb_my_orders(call: CallbackQuery):
-    rows = user_orders(call.from_user.id)
-    await call.message.answer(
-        user_orders_card(rows),
-        parse_mode="HTML",
-        reply_markup=back_menu(),
-    )
     await call.answer()
 
 

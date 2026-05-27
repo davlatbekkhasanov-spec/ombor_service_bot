@@ -10,7 +10,6 @@ Ombor xizmati Telegram boti — mijoz va xodimlar uchun tez ariza, guruhda qabul
 - 📦 Tovar buyurtma
 - 📋 Mahsulot olib keling
 - ℹ️ Savol
-- 📋 Mening arizalarim
 
 **Guruh (ombor jamoasi):**
 - **👷 Men xizmat ko'rsataman** — xodim arizani band qiladi (boshqasi ololmaydi)
