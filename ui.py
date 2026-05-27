@@ -64,19 +64,25 @@ def _elapsed_minutes(assigned_at: str | None) -> int | None:
 
 def welcome_card() -> str:
     return (
-        "🏭 <b>OMBOR XIZMATI</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "Assalomu alaykum!\n\n"
-        "Ombor xodimlari va mijozlar uchun tez yordam boti.\n"
-        "Quyidagi tugmalardan birini tanlang:\n\n"
-        "🙋 <b>Xizmat ko'rsating</b> — tez chaqiruv\n"
-        "👀 <b>Mijozga qarang</b> — ombordagi mijoz\n"
-        "📦 <b>Buyurtma</b> — tovar ro'yxati\n"
-        "📋 <b>Olib keling</b> — mahsulot yetkazish\n"
-        "⭐ <b>VIP</b> — shoshilinch\n"
-        "⚠️ <b>Muammo</b> — shikoyat\n"
-        "ℹ️ <b>Savol</b> — ma'lumot"
+        "🏭 <b>OMBOR XIZMATI</b>\n\n"
+        "Assalomu alaykum! Quyidagi tugmalardan tanlang 👇"
     )
+
+
+def customer_sent(order_id: int) -> str:
+    return f"✅  <b>#{order_id}</b> qabul qilindi.\nXodim tez orada javob beradi."
+
+
+def customer_done(order: dict) -> str:
+    staff = _e(order.get("assigned_to"))
+    return (
+        f"✅  <b>#{order['id']}</b> bajarildi\n"
+        f"👷  {staff}  ·  ⏱  {format_duration(order)}"
+    )
+
+
+def customer_rejected(order_id: int) -> str:
+    return f"❌  <b>#{order_id}</b> rad etildi."
 
 
 def order_card(order: dict, *, for_group: bool = False, live: bool = False) -> str:

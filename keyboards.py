@@ -19,32 +19,37 @@ REQUEST_TYPES = {
 INSTANT_TYPES = frozenset({"call_staff", "check_client"})
 
 
+def _lbl(icon: str, text: str) -> str:
+    """Emoji + matn — ikonka yozuv yonida."""
+    return f"{icon}  {text}"
+
+
 def main_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="🙋 Iltimos, xizmat ko'rsating", callback_data="req:call_staff")
-    kb.button(text="👀 Ombordagi mijozga qarang", callback_data="req:check_client")
-    kb.button(text="📦 Tovar / mahsulot buyurtma", callback_data="req:product_order")
-    kb.button(text="📋 Mahsulot olib keling", callback_data="req:bring_product")
-    kb.button(text="⭐ VIP / Shoshilinch", callback_data="req:vip")
-    kb.button(text="⚠️ Muammo / shikoyat", callback_data="req:complaint")
-    kb.button(text="ℹ️ Savol / ma'lumot", callback_data="req:info")
-    kb.button(text="📋 Mening arizalarim", callback_data="my_orders")
-    kb.adjust(1)
+    kb.button(text=_lbl("🙋", "Xizmat ko'rsating"), callback_data="req:call_staff")
+    kb.button(text=_lbl("👀", "Mijozga qarang"), callback_data="req:check_client")
+    kb.button(text=_lbl("📦", "Tovar buyurtma"), callback_data="req:product_order")
+    kb.button(text=_lbl("📋", "Olib keling"), callback_data="req:bring_product")
+    kb.button(text=_lbl("⭐", "VIP / Shoshilinch"), callback_data="req:vip")
+    kb.button(text=_lbl("⚠️", "Muammo"), callback_data="req:complaint")
+    kb.button(text=_lbl("ℹ️", "Savol"), callback_data="req:info")
+    kb.button(text=_lbl("📋", "Mening arizalarim"), callback_data="my_orders")
+    kb.adjust(2, 2, 2, 1, 1)
     return kb.as_markup()
 
 
 def back_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="◀️ Asosiy menyu", callback_data="menu")
+    kb.button(text=_lbl("◀️", "Asosiy menyu"), callback_data="menu")
     kb.adjust(1)
     return kb.as_markup()
 
 
 def confirm_instant(request_type: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="✅ Ha, yuborish", callback_data=f"send:{request_type}")
-    kb.button(text="◀️ Bekor", callback_data="menu")
-    kb.adjust(1)
+    kb.button(text=_lbl("✅", "Ha, yuborish"), callback_data=f"send:{request_type}")
+    kb.button(text=_lbl("◀️", "Bekor"), callback_data="menu")
+    kb.adjust(2)
     return kb.as_markup()
 
 
@@ -54,29 +59,31 @@ def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> I
     assignee_id = order.get("assigned_to_id")
 
     if status == "yangi":
-        kb.button(text="👷 Men xizmat ko'rsataman", callback_data=f"act:{order_id}:band")
-        kb.button(text="❌ Rad etish", callback_data=f"act:{order_id}:rad")
+        kb.button(text=_lbl("👷", "Men xizmat ko'rsataman"), callback_data=f"act:{order_id}:band")
+        kb.button(text=_lbl("❌", "Rad etish"), callback_data=f"act:{order_id}:rad")
+        kb.adjust(2)
     elif status == "jarayonda":
         if viewer_id is None or viewer_id == assignee_id:
-            kb.button(text="✔️ Xizmat tugadi", callback_data=f"act:{order_id}:tugadi")
+            kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
         else:
             kb.button(
-                text=f"🔒 {order.get('assigned_to', 'Xodim')} xizmatda",
+                text=_lbl("🔒", f"{order.get('assigned_to', 'Xodim')} xizmatda"),
                 callback_data="noop",
             )
+        kb.adjust(1)
     else:
         label = STATUSES.get(status, status)
         if status == "bajarildi":
-            label = f"✔️ {format_duration(order)}"
+            label = _lbl("✔️", format_duration(order))
         kb.button(text=label, callback_data="noop")
-    kb.adjust(1)
+        kb.adjust(1)
     return kb.as_markup()
 
 
 def report_menu() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    kb.button(text="📊 Bugungi hisobot", callback_data="report:today")
-    kb.button(text="👷 Xodimlar bo'yicha", callback_data="report:staff")
-    kb.button(text="📈 Umumiy holat", callback_data="report:all")
-    kb.adjust(1)
+    kb.button(text=_lbl("📊", "Bugun"), callback_data="report:today")
+    kb.button(text=_lbl("👷", "Xodimlar"), callback_data="report:staff")
+    kb.button(text=_lbl("📈", "Umumiy"), callback_data="report:all")
+    kb.adjust(3)
     return kb.as_markup()

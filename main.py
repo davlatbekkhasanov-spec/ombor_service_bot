@@ -34,11 +34,13 @@ from storage import (
     user_orders,
 )
 from ui import (
+    customer_done,
+    customer_rejected,
+    customer_sent,
     instant_confirm_text,
     instant_order_text,
     notify_staff_assigned,
     notify_staff_completed,
-    notify_user_status,
     order_card,
     format_duration,
     prompt_for_type,
@@ -234,10 +236,9 @@ async def cb_send_instant(call: CallbackQuery, state: FSMContext):
     )
     extra = ""
     if not sent:
-        extra = "\n\n⚠️ Guruhga xabar ketmadi — GROUP_ID ni tekshiring."
+        extra = "\n⚠️ Guruhga xabar ketmadi."
     await call.message.answer(
-        f"✅ Ariza yuborildi!\nRaqam: <b>#{order_id}</b>{extra}\n\n"
-        "Xodim tez orada sizga xizmat ko'rsatadi.",
+        customer_sent(order_id) + extra,
         parse_mode="HTML",
         reply_markup=main_menu(),
     )
@@ -260,10 +261,9 @@ async def save_text_order(message: Message, state: FSMContext):
     await state.clear()
     extra = ""
     if not sent:
-        extra = "\n\n⚠️ Guruhga xabar ketmadi — GROUP_ID ni tekshiring."
+        extra = "\n⚠️ Guruhga xabar ketmadi."
     await message.answer(
-        f"✅ Ariza qabul qilindi!\nRaqam: <b>#{order_id}</b>{extra}\n\n"
-        "Ombor xodimi tez orada band qiladi.",
+        customer_sent(order_id) + extra,
         parse_mode="HTML",
         reply_markup=main_menu(),
     )
@@ -293,14 +293,7 @@ async def cb_group_action(call: CallbackQuery):
             await call.answer(err, show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)
-        try:
-            await bot.send_message(
-                updated["user_id"],
-                notify_user_status(updated),
-                parse_mode="HTML",
-            )
-        except Exception:
-            log.warning("Mijozga xabar ketmadi")
+        # Mijozga xabar yo'q — faqat tugaganda yoki rad etilganda
         try:
             await bot.send_message(
                 staff_id,
@@ -328,7 +321,7 @@ async def cb_group_action(call: CallbackQuery):
         try:
             await bot.send_message(
                 updated["user_id"],
-                notify_user_status(updated),
+                customer_done(updated),
                 parse_mode="HTML",
                 reply_markup=main_menu(),
             )
@@ -357,7 +350,7 @@ async def cb_group_action(call: CallbackQuery):
         try:
             await bot.send_message(
                 updated["user_id"],
-                notify_user_status(updated),
+                customer_rejected(order_id),
                 parse_mode="HTML",
                 reply_markup=main_menu(),
             )
