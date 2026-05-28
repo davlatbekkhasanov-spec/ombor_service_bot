@@ -42,10 +42,16 @@ def format_duration(order: dict) -> str:
         return "—"
     if sec < 60:
         return f"{sec} soniya"
-    m, s = divmod(sec, 60)
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    parts: list[str] = []
+    if h:
+        parts.append(f"{h} soat")
+    if m:
+        parts.append(f"{m} daqiqa")
     if s:
-        return f"{m} daqiqa {s} soniya"
-    return f"{m} daqiqa"
+        parts.append(f"{s} soniya")
+    return " ".join(parts) if parts else "0 soniya"
 
 
 def live_timer_line(since: str | None, label: str) -> str:
