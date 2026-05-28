@@ -25,8 +25,7 @@ def _elapsed_seconds(since: str | None) -> int | None:
     start = _parse_dt(since)
     if not start:
         return None
-    now_local = datetime.now() + timedelta(hours=TZ_OFFSET_HOURS)
-    return max(0, int((now_local - start).total_seconds()))
+    return max(0, int((datetime.now() - start).total_seconds()))
 
 
 def _display_dt(raw: str | None, *, with_seconds: bool = True) -> str:
