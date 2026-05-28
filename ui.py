@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
+from datetime import timedelta
 from html import escape
 
 from storage import STATUSES, _parse_dt, seconds_between
@@ -10,6 +12,9 @@ from storage import STATUSES, _parse_dt, seconds_between
 
 def _e(text: str | None) -> str:
     return escape(text or "—")
+
+
+TZ_OFFSET_HOURS = int((os.getenv("TZ_OFFSET_HOURS") or "5").strip() or "5")
 
 
 def status_label(code: str) -> str:
@@ -20,7 +25,17 @@ def _elapsed_seconds(since: str | None) -> int | None:
     start = _parse_dt(since)
     if not start:
         return None
-    return max(0, int((datetime.now() - start).total_seconds()))
+    now_local = datetime.now() + timedelta(hours=TZ_OFFSET_HOURS)
+    return max(0, int((now_local - start).total_seconds()))
+
+
+def _display_dt(raw: str | None, *, with_seconds: bool = True) -> str:
+    dt = _parse_dt(raw)
+    if not dt:
+        return _e(raw)
+    dt = dt + timedelta(hours=TZ_OFFSET_HOURS)
+    fmt = "%Y-%m-%d %H:%M:%S" if with_seconds else "%Y-%m-%d %H:%M"
+    return dt.strftime(fmt)
 
 
 def _format_clock(total_sec: int) -> str:
@@ -122,7 +137,7 @@ def order_card(order: dict, *, for_group: bool = False, live: bool = False) -> s
         "",
         f"👤 Mijoz: {_e(order.get('full_name'))}",
         f"📱 {user_line}  ·  ID <code>{order['user_id']}</code>",
-        f"🕐 Keldi: {_e(order.get('created_at'))}",
+        f"🕐 Keldi: {_display_dt(order.get('created_at'))}",
     ])
 
     assignee = order.get("staff_names") or order.get("assigned_to")
@@ -135,12 +150,12 @@ def order_card(order: dict, *, for_group: bool = False, live: bool = False) -> s
             if elapsed is not None:
                 lines.append(f"⏱ Hozir: <b>{elapsed} daqiqa</b>")
         if order.get("assigned_at"):
-            lines.append(f"🔗 Band qilindi: {_e(order['assigned_at'][:16])}")
+            lines.append(f"🔗 Band qilindi: {_display_dt(order.get('assigned_at'), with_seconds=False)}")
 
     if order["status"] == "bajarildi":
         lines.append(f"⏱ Xizmat vaqti: <b>{format_duration(order)}</b>")
         if order.get("finished_at"):
-            lines.append(f"✅ Tugadi: {_e(order['finished_at'][:16])}")
+            lines.append(f"✅ Tugadi: {_display_dt(order.get('finished_at'), with_seconds=False)}")
 
     lines.extend(["", _e(order.get("text"))])
 
@@ -167,7 +182,7 @@ def user_orders_card(rows: list[dict]) -> str:
             extra = f"\n   ⏱ {format_duration(r)} · 👷 {_e(r.get('assigned_to'))}"
         lines.append(
             f"#{r['id']}  {status_label(r['status'])}\n"
-            f"   {_e(r['kind_label'])} · {_e(r['created_at'][:16])}{extra}"
+            f"   {_e(r['kind_label'])} · {_display_dt(r.get('created_at'), with_seconds=False)}{extra}"
         )
     return "\n".join(lines)
 
