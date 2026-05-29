@@ -46,6 +46,7 @@ from ui import (
     service_done_group_card,
     welcome_card,
 )
+from yordamchi_push import push_to_yordamchi_hub_background
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -294,6 +295,14 @@ async def cb_group_action(call: CallbackQuery):
             )
         except Exception:
             log.warning("Mijozga tugatish xabari ketmadi")
+        push_to_yordamchi_hub_background(
+            tg_id=staff_id,
+            bot_key="ombor",
+            summary=(
+                f"#{updated['id']} {updated.get('kind_label', '')}: bajarildi, "
+                f"{format_duration(updated)}"
+            ),
+        )
         await call.answer(f"Tugadi! {format_duration(updated)}")
 
     elif action == "rad":
