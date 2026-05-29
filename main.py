@@ -46,6 +46,7 @@ from ui import (
     service_done_group_card,
     welcome_card,
 )
+from hub_test import BTN_HUB_TEST, handle_admin_hub_test
 from yordamchi_push import push_to_yordamchi_hub_background
 
 logging.basicConfig(level=logging.INFO)
@@ -134,7 +135,20 @@ async def _create_order_for_user(
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(welcome_card(), parse_mode="HTML", reply_markup=main_menu())
+    text = welcome_card()
+    if message.from_user and is_admin(message.from_user.id):
+        text += f"\n\n<i>Admin: /test_hub</i>"
+    await message.answer(text, parse_mode="HTML", reply_markup=main_menu())
+
+
+@dp.message(Command("test_hub"))
+async def cmd_test_hub(message: Message):
+    await handle_admin_hub_test(message)
+
+
+@dp.message(F.text == BTN_HUB_TEST)
+async def btn_test_hub(message: Message):
+    await handle_admin_hub_test(message)
 
 
 @dp.message(Command("cancel"))
