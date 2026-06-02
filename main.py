@@ -46,7 +46,7 @@ from ui import (
     service_done_group_card,
     welcome_card,
 )
-from yordamchi_push import push_to_yordamchi_hub_background
+from yordamchi_push import push_to_yordamchi_hub, push_to_yordamchi_hub_background, today_iso
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -382,6 +382,21 @@ async def cmd_orders(message: Message):
 async def main():
     global _ticker
     init_db()
+    try:
+        st = stats_today()
+        day = today_iso()
+        for row in st.get("by_staff", []):
+            uid = int(row.get("staff_id") or 0)
+            sec = int(row.get("total_sec") or 0)
+            if uid and sec > 0:
+                await push_to_yordamchi_hub(
+                    tg_id=uid,
+                    bot_key="ombor",
+                    summary=f"Ombor (bugun jami): ish vaqti {sec} soniya",
+                    day_iso=day,
+                )
+    except Exception:
+        log.exception("ombor hub backfill xato")
     if GROUP_ID is None:
         log.warning("GROUP_ID sozlanmagan")
     else:

@@ -423,7 +423,7 @@ def stats_today() -> dict[str, Any]:
     ).fetchall()
     by_staff = conn.execute(
         """
-        SELECT os.staff_name AS assigned_to, COUNT(DISTINCT os.order_id) AS cnt,
+        SELECT os.staff_id, os.staff_name AS assigned_to, COUNT(DISTINCT os.order_id) AS cnt,
                AVG(COALESCE(o.service_seconds, o.service_minutes * 60)) AS avg_sec,
                SUM(COALESCE(o.service_seconds, o.service_minutes * 60)) AS total_sec
         FROM order_staff os
