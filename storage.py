@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime
 from typing import Any
 
-DB_NAME = "orders.db"
+DB_NAME = os.getenv("DB_PATH", "/data/orders.db").strip() or "/data/orders.db"
+_db_dir = os.path.dirname(DB_NAME)
+if _db_dir:
+    os.makedirs(_db_dir, exist_ok=True)
 
 STATUSES = {
     "yangi": "🆕 Yangi",
