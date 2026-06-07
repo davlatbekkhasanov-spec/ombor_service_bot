@@ -26,6 +26,10 @@ ADMIN_IDS=123456789,987654321
 
 - `GROUP_ID` — ombor ishchi guruhi (majburiy)
 - `ADMIN_IDS` — ixtiyoriy; `/orders` va shaxsiy hisobot uchun
+- `TICK_SEC=15` — LIVE tekshiruv intervali (kamida 10)
+- `LIVE_EDIT_SEC=20` — bir ariza xabarini qayta edit qilish intervali (flood oldini oladi)
+
+**Muhim:** ombor va kanstik tekshiruv botlarini **alohida guruhlarga** qo'ying — bir guruhda ikkala bot flood limitiga tez uriladi.
 
 Botni guruhga qo'shing va **admin** qiling. Guruh ID: guruhda `/id`.
 

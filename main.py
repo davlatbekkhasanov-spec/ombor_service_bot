@@ -10,7 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Message
 
 from config import is_admin, settings
-from live_ticker import LiveTicker
+from live_ticker import LiveTicker, refresh_order_message
 from keyboards import (
     INSTANT_TYPES,
     REQUEST_TYPES,
@@ -47,6 +47,7 @@ from ui import (
     welcome_card,
 )
 from yordamchi_push import push_to_yordamchi_hub, push_to_yordamchi_hub_background, today_iso
+from telegram_safe import run_telegram
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -73,36 +74,37 @@ def _staff_name(user) -> str:
 
 
 async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> None:
-    msg_id = order.get("group_message_id")
-    if not msg_id or not GROUP_ID:
+    if not GROUP_ID:
         return
-    try:
-        await bot.edit_message_text(
-            order_card(order, for_group=True, live=True),
-            chat_id=GROUP_ID,
-            message_id=msg_id,
-            parse_mode="HTML",
-            reply_markup=group_actions(order["id"], order, viewer_id),
-        )
-    except Exception:
-        log.exception("Guruh xabarini yangilash xato #%s", order["id"])
+    await refresh_order_message(
+        bot,
+        GROUP_ID,
+        order,
+        viewer_id=viewer_id,
+        force=True,
+    )
 
 
 async def _notify_group(order_id: int) -> Message | None:
     order = get_order(order_id)
     if not order or not GROUP_ID:
         return None
-    try:
-        msg = await bot.send_message(
+
+    async def _send() -> Message:
+        return await bot.send_message(
             GROUP_ID,
             order_card(order, for_group=True, live=True),
             parse_mode="HTML",
             reply_markup=group_actions(order_id, order),
         )
+
+    try:
+        msg = await run_telegram(_send, label=f"send #{order_id}", force=True)
+        if not msg:
+            log.warning("Guruhga #%s yuborilmadi (flood yoki xato)", order_id)
+            return None
         set_group_message(order_id, msg.message_id)
         log.info("Guruhga #%s yuborildi", order_id)
-        if _ticker:
-            await _ticker.tick_once()
         return msg
     except Exception:
         log.exception("Guruhga yuborish xato #%s", order_id)

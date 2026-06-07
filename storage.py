@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from datetime import datetime
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 DB_NAME = os.getenv("DB_PATH", "/data/orders.db").strip() or "/data/orders.db"
 _db_dir = os.path.dirname(DB_NAME)
@@ -128,6 +131,12 @@ def init_db() -> None:
     """)
     conn.commit()
     conn.close()
+    try:
+        from orders_persist import ensure_orders_seed
+
+        ensure_orders_seed()
+    except Exception:
+        log.exception("orders_seed tiklash xato")
 
 
 def get_order_staff(order_id: int) -> list[dict[str, Any]]:
