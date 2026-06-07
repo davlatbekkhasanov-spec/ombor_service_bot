@@ -30,6 +30,7 @@ from storage import (
     reject_order,
     set_group_message,
     stats_all_status,
+    stats_all_status,
     stats_today,
 )
 from ui import (
@@ -381,9 +382,57 @@ async def cmd_orders(message: Message):
     await message.answer("\n".join(lines), parse_mode="HTML")
 
 
+@dp.message(Command("seedstatus"))
+async def cmd_seedstatus(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    from orders_seed import ORDERS_SEED_NOTE, ORDERS_SEED_ROWS, ORDERS_SEED_VERSION
+    from storage import _conn
+
+    conn = _conn()
+    meta = conn.execute(
+        "SELECT version, applied_at, note FROM orders_seed_meta WHERE id = 1"
+    ).fetchone()
+    total = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+    done = conn.execute(
+        "SELECT COUNT(*) FROM orders WHERE status='bajarildi'"
+    ).fetchone()[0]
+    conn.close()
+    st = stats_all_status()
+    today = stats_today()
+    lines = [
+        "📦 <b>Seed holati</b>",
+        f"Kod: v{ORDERS_SEED_VERSION} · {len(ORDERS_SEED_ROWS)} ta qator",
+        f"Matn: {ORDERS_SEED_NOTE}",
+    ]
+    if meta:
+        lines.append(f"DB meta: v{meta[0]} · {meta[1]}")
+        if meta[2]:
+            lines.append(f"DB izoh: {meta[2]}")
+    lines.append(f"SQLite: jami <b>{total}</b> · bajarildi <b>{done}</b>")
+    lines.append(f"Bugun: <b>{today['total_today']}</b> ta · {today['date']}")
+    if st:
+        parts = ", ".join(f"{k}={v}" for k, v in sorted(st.items()))
+        lines.append(f"Holatlar: {parts}")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
 async def main():
     global _ticker
     init_db()
+    try:
+        from orders_seed import ORDERS_SEED_ROWS, ORDERS_SEED_VERSION
+
+        all_s = stats_all_status()
+        log.info(
+            "DB tayyor: %s ta ariza %s · seed v%s (%s qator)",
+            sum(all_s.values()),
+            all_s,
+            ORDERS_SEED_VERSION,
+            len(ORDERS_SEED_ROWS),
+        )
+    except Exception:
+        log.exception("DB holati log xato")
     try:
         st = stats_today()
         day = today_iso()

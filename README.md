@@ -51,3 +51,4 @@ python main.py
 | `/id` | Hamma | Chat ID |
 | `/stat` | Guruh | Bugungi hisobot |
 | `/orders` | Admin | Oxirgi arizalar |
+| `/seedstatus` | Admin | Seed va DB holati |
