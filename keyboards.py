@@ -52,8 +52,10 @@ def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> I
             kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
             kb.adjust(1)
         else:
+            # Guruhda klaviatura hammaga bir xil — jamoa tugatishi uchun ikkalasi ham kerak
             kb.button(text=_lbl("➕", "Qo'shilaman"), callback_data=f"act:{order_id}:qoshil")
-            kb.adjust(1)
+            kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
+            kb.adjust(2)
     else:
         label = STATUSES.get(status, status)
         if status == "bajarildi":

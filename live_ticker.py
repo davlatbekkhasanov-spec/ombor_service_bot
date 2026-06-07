@@ -43,17 +43,18 @@ async def refresh_order_message(
         return False
 
     fresh = get_order(order["id"]) or order
-    if fresh["status"] not in ("yangi", "jarayonda"):
+    is_live = fresh["status"] in ("yangi", "jarayonda")
+    if not is_live:
         _last_edit_at.pop(fresh["id"], None)
-        return False
 
     now = time.monotonic()
     if not force:
         last = _last_edit_at.get(fresh["id"], 0.0)
-        if now - last < _live_edit_interval():
+        interval = _live_edit_interval() if is_live else 5.0
+        if now - last < interval:
             return False
 
-    caption = order_card(fresh, for_group=True, live=True)
+    caption = order_card(fresh, for_group=True, live=is_live)
     markup = group_actions(fresh["id"], fresh, viewer_id)
 
     async def _edit() -> bool:

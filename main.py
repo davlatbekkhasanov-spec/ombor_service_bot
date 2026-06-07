@@ -86,6 +86,12 @@ async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> N
     )
 
 
+async def _sync_group_order(order_id: int, viewer_id: int | None = None) -> None:
+    order = get_order(order_id)
+    if order:
+        await _refresh_group_message(order, viewer_id)
+
+
 async def _notify_group(order_id: int) -> Message | None:
     order = get_order(order_id)
     if not order or not GROUP_ID:
@@ -262,6 +268,7 @@ async def cb_group_action(call: CallbackQuery):
     if action == "band":
         updated, err = assign_to_staff(order_id, staff_id, staff_name)
         if err:
+            await _sync_group_order(order_id, staff_id)
             await call.answer(err, show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)
@@ -270,6 +277,7 @@ async def cb_group_action(call: CallbackQuery):
     elif action == "qoshil":
         updated, err = join_staff(order_id, staff_id, staff_name)
         if err:
+            await _sync_group_order(order_id, staff_id)
             await call.answer(err, show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)
@@ -329,11 +337,27 @@ async def cb_group_action(call: CallbackQuery):
 
     elif action == "rad":
         order = get_order(order_id)
-        if order and order["status"] != "yangi":
-            await call.answer("Faqat yangi arizani rad etish mumkin", show_alert=True)
+        if not order:
+            await call.answer("Ariza topilmadi", show_alert=True)
+            return
+        if order["status"] == "bajarildi":
+            await _refresh_group_message(order, staff_id)
+            await call.answer("Bu ariza allaqachon tugagan", show_alert=True)
+            return
+        if order["status"] == "jarayonda":
+            await _refresh_group_message(order, staff_id)
+            await call.answer(
+                "Xizmat boshlangan — rad etib bo'lmaydi",
+                show_alert=True,
+            )
+            return
+        if order["status"] == "rad":
+            await _refresh_group_message(order, staff_id)
+            await call.answer("Allaqachon rad etilgan", show_alert=True)
             return
         updated = reject_order(order_id)
         if not updated:
+            await _sync_group_order(order_id, staff_id)
             await call.answer("Rad etib bo'lmadi", show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)

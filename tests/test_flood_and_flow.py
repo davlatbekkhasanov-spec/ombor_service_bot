@@ -195,7 +195,7 @@ class TestLiveTickerThrottle(unittest.TestCase):
         self.assertTrue(forced)
         self.assertEqual(bot.edit_message_text.await_count, 1)
 
-    def test_completed_order_stops_refresh(self) -> None:
+    def test_completed_order_refresh_with_force(self) -> None:
         order = self._make_order(status="jarayonda", msg_id=800)
         storage.complete_order(order["id"], 222)
         finished = storage.get_order(order["id"])
@@ -206,8 +206,8 @@ class TestLiveTickerThrottle(unittest.TestCase):
         ok = _run(
             live_ticker.refresh_order_message(bot, -1001, finished, force=True)
         )
-        self.assertFalse(ok)
-        bot.edit_message_text.assert_not_awaited()
+        self.assertTrue(ok)
+        bot.edit_message_text.assert_awaited_once()
 
 
 class TestStorageFlow(unittest.TestCase):
@@ -300,19 +300,21 @@ class TestKeyboards(unittest.TestCase):
         self.assertEqual(len(texts), 1)
         self.assertIn("tugadi", kb.inline_keyboard[0][0].callback_data)
 
-    def test_jarayonda_anonymous_viewer_sees_join_only(self) -> None:
+    def test_jarayonda_anonymous_viewer_sees_join_and_finish(self) -> None:
         order = {"status": "jarayonda", "staff_ids": {10}}
         kb = group_actions(1, order, viewer_id=None)
-        texts = [b.text for row in kb.inline_keyboard for b in row]
-        self.assertEqual(len(texts), 1)
-        self.assertIn("qoshil", kb.inline_keyboard[0][0].callback_data)
+        callbacks = [b.callback_data for row in kb.inline_keyboard for b in row]
+        self.assertEqual(len(callbacks), 2)
+        self.assertIn("qoshil", callbacks[0])
+        self.assertIn("tugadi", callbacks[1])
 
-    def test_jarayonda_outsider_sees_join_only(self) -> None:
+    def test_jarayonda_outsider_sees_join_and_finish(self) -> None:
         order = {"status": "jarayonda", "staff_ids": {10}}
         kb = group_actions(1, order, viewer_id=99)
-        texts = [b.text for row in kb.inline_keyboard for b in row]
-        self.assertEqual(len(texts), 1)
-        self.assertIn("qoshil", kb.inline_keyboard[0][0].callback_data)
+        callbacks = [b.callback_data for row in kb.inline_keyboard for b in row]
+        self.assertEqual(len(callbacks), 2)
+        self.assertIn("qoshil", callbacks[0])
+        self.assertIn("tugadi", callbacks[1])
 
 
 class TestConfigBounds(unittest.TestCase):
