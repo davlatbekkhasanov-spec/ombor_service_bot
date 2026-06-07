@@ -330,7 +330,11 @@ def complete_order(
     if not order:
         return None, "Ariza topilmadi"
     if order["status"] != "jarayonda":
-        return None, "Bu ariza xizmatda emas"
+        if order["status"] == "bajarildi":
+            return None, "Bu ariza allaqachon tugagan"
+        if order["status"] == "yangi":
+            return None, "Avval «Men xizmat ko'rsataman» bosing"
+        return None, "Bu ariza yopilgan"
     if not is_staff_on_order(order_id, staff_id):
         return None, "Avval «Qo'shilaman» yoki band qiling"
 

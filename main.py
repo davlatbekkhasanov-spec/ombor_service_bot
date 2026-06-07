@@ -276,8 +276,27 @@ async def cb_group_action(call: CallbackQuery):
         await call.answer(f"#{order_id} jamoaga qo'shildingiz")
 
     elif action == "tugadi":
+        order = get_order(order_id)
+        if not order:
+            await call.answer("Ariza topilmadi", show_alert=True)
+            return
+        if order["status"] == "bajarildi":
+            await _refresh_group_message(order, staff_id)
+            await call.answer("Bu ariza allaqachon tugagan", show_alert=True)
+            return
+        if order["status"] == "yangi":
+            await call.answer(
+                "Avval «Men xizmat ko'rsataman» bosing",
+                show_alert=True,
+            )
+            return
+        if order["status"] != "jarayonda":
+            await _refresh_group_message(order, staff_id)
+            await call.answer("Bu ariza yopilgan", show_alert=True)
+            return
         updated, err = complete_order(order_id, staff_id)
         if err:
+            await _refresh_group_message(order, staff_id)
             await call.answer(err, show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)

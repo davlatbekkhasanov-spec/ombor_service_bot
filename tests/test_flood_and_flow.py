@@ -300,6 +300,13 @@ class TestKeyboards(unittest.TestCase):
         self.assertEqual(len(texts), 1)
         self.assertIn("tugadi", kb.inline_keyboard[0][0].callback_data)
 
+    def test_jarayonda_anonymous_viewer_sees_join_only(self) -> None:
+        order = {"status": "jarayonda", "staff_ids": {10}}
+        kb = group_actions(1, order, viewer_id=None)
+        texts = [b.text for row in kb.inline_keyboard for b in row]
+        self.assertEqual(len(texts), 1)
+        self.assertIn("qoshil", kb.inline_keyboard[0][0].callback_data)
+
     def test_jarayonda_outsider_sees_join_only(self) -> None:
         order = {"status": "jarayonda", "staff_ids": {10}}
         kb = group_actions(1, order, viewer_id=99)

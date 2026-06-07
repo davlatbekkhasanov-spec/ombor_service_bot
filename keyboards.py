@@ -48,11 +48,7 @@ def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> I
         kb.adjust(2)
     elif status == "jarayonda":
         on_team = viewer_id is not None and viewer_id in staff_ids
-        if viewer_id is None:
-            kb.button(text=_lbl("➕", "Qo'shilaman"), callback_data=f"act:{order_id}:qoshil")
-            kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
-            kb.adjust(2)
-        elif on_team:
+        if on_team:
             kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
             kb.adjust(1)
         else:
