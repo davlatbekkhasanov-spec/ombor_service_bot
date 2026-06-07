@@ -379,6 +379,35 @@ def reject_order(order_id: int) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def cancel_service_order(
+    order_id: int,
+    staff_id: int,
+    *,
+    admin: bool = False,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Xizmatdagi arizani bekor qilish (rad) — faqat jamoa yoki admin."""
+    order = get_order(order_id)
+    if not order:
+        return None, "Ariza topilmadi"
+    if order["status"] != "jarayonda":
+        return None, "Faqat xizmatdagi arizani bekor qilish mumkin"
+    if not admin and not is_staff_on_order(order_id, staff_id):
+        return None, "Faqat xizmat ko'rsatayotgan xodim bekor qila oladi"
+
+    now = _now()
+    conn = _conn()
+    conn.execute(
+        "UPDATE orders SET status='rad', updated_at=? WHERE id=? AND status='jarayonda'",
+        (now, order_id),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    conn.close()
+    if not row or row["status"] != "rad":
+        return None, "Bekor qilib bo'lmadi"
+    return attach_staff(dict(row)), None
+
+
 def set_group_message(order_id: int, message_id: int) -> None:
     conn = _conn()
     conn.execute(

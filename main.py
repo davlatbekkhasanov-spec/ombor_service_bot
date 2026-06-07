@@ -21,6 +21,7 @@ from keyboards import (
 )
 from storage import (
     assign_to_staff,
+    cancel_service_order,
     complete_order,
     create_order,
     get_order,
@@ -29,7 +30,6 @@ from storage import (
     recent_orders,
     reject_order,
     set_group_message,
-    stats_all_status,
     stats_all_status,
     stats_today,
 )
@@ -345,11 +345,26 @@ async def cb_group_action(call: CallbackQuery):
             await call.answer("Bu ariza allaqachon tugagan", show_alert=True)
             return
         if order["status"] == "jarayonda":
-            await _refresh_group_message(order, staff_id)
-            await call.answer(
-                "Xizmat boshlangan — rad etib bo'lmaydi",
-                show_alert=True,
+            updated, err = cancel_service_order(
+                order_id,
+                staff_id,
+                admin=is_admin(staff_id),
             )
+            if not updated:
+                await _refresh_group_message(order, staff_id)
+                await call.answer(err or "Rad etib bo'lmadi", show_alert=True)
+                return
+            await _refresh_group_message(updated, staff_id)
+            try:
+                await bot.send_message(
+                    updated["user_id"],
+                    customer_rejected(order_id),
+                    parse_mode="HTML",
+                    reply_markup=main_menu(),
+                )
+            except Exception:
+                pass
+            await call.answer("Xizmat bekor qilindi")
             return
         if order["status"] == "rad":
             await _refresh_group_message(order, staff_id)

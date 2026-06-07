@@ -40,22 +40,17 @@ def back_menu() -> InlineKeyboardMarkup:
 def group_actions(order_id: int, order: dict, viewer_id: int | None = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     status = order["status"]
-    staff_ids = order.get("staff_ids") or set()
+    _ = viewer_id  # guruhda klaviatura hammaga bir xil
 
     if status == "yangi":
         kb.button(text=_lbl("👷", "Men xizmat ko'rsataman"), callback_data=f"act:{order_id}:band")
         kb.button(text=_lbl("❌", "Rad etish"), callback_data=f"act:{order_id}:rad")
         kb.adjust(2)
     elif status == "jarayonda":
-        on_team = viewer_id is not None and viewer_id in staff_ids
-        if on_team:
-            kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
-            kb.adjust(1)
-        else:
-            # Guruhda klaviatura hammaga bir xil — jamoa tugatishi uchun ikkalasi ham kerak
-            kb.button(text=_lbl("➕", "Qo'shilaman"), callback_data=f"act:{order_id}:qoshil")
-            kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
-            kb.adjust(2)
+        kb.button(text=_lbl("➕", "Qo'shilaman"), callback_data=f"act:{order_id}:qoshil")
+        kb.button(text=_lbl("✔️", "Xizmat tugadi"), callback_data=f"act:{order_id}:tugadi")
+        kb.button(text=_lbl("❌", "Rad etish"), callback_data=f"act:{order_id}:rad")
+        kb.adjust(2, 1)
     else:
         label = STATUSES.get(status, status)
         if status == "bajarildi":

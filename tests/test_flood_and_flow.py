@@ -288,33 +288,49 @@ class TestStorageFlow(unittest.TestCase):
         self.assertIsNotNone(storage.reject_order(oid))
         self.assertIsNone(storage.reject_order(oid))
 
+    def test_cancel_service_order(self) -> None:
+        oid = storage.create_order(
+            user_id=1,
+            username=None,
+            full_name="C",
+            request_type="call_staff",
+            kind_label="Xizmat",
+            text="Yordam",
+        )
+        storage.assign_to_staff(oid, 10, "Ali")
+        cancelled, err = storage.cancel_service_order(oid, 10)
+        self.assertIsNone(err)
+        assert cancelled is not None
+        self.assertEqual(cancelled["status"], "rad")
+
+        oid2 = storage.create_order(
+            user_id=2,
+            username=None,
+            full_name="D",
+            request_type="call_staff",
+            kind_label="Xizmat",
+            text="Yordam 2",
+        )
+        storage.assign_to_staff(oid2, 10, "Ali")
+        outsider, err2 = storage.cancel_service_order(oid2, 99)
+        self.assertIsNone(outsider)
+        self.assertIn("xodim", (err2 or "").lower())
+
 
 class TestKeyboards(unittest.TestCase):
-    def test_jarayonda_viewer_on_team_sees_finish_only(self) -> None:
-        order = {
-            "status": "jarayonda",
-            "staff_ids": {10, 11},
-        }
-        kb = group_actions(1, order, viewer_id=10)
-        texts = [b.text for row in kb.inline_keyboard for b in row]
-        self.assertEqual(len(texts), 1)
-        self.assertIn("tugadi", kb.inline_keyboard[0][0].callback_data)
+    def _jarayonda_callbacks(self, viewer_id: int | None) -> list[str]:
+        order = {"status": "jarayonda", "staff_ids": {10, 11}}
+        kb = group_actions(1, order, viewer_id=viewer_id)
+        return [b.callback_data for row in kb.inline_keyboard for b in row]
 
-    def test_jarayonda_anonymous_viewer_sees_join_and_finish(self) -> None:
-        order = {"status": "jarayonda", "staff_ids": {10}}
-        kb = group_actions(1, order, viewer_id=None)
-        callbacks = [b.callback_data for row in kb.inline_keyboard for b in row]
-        self.assertEqual(len(callbacks), 2)
-        self.assertIn("qoshil", callbacks[0])
-        self.assertIn("tugadi", callbacks[1])
-
-    def test_jarayonda_outsider_sees_join_and_finish(self) -> None:
-        order = {"status": "jarayonda", "staff_ids": {10}}
-        kb = group_actions(1, order, viewer_id=99)
-        callbacks = [b.callback_data for row in kb.inline_keyboard for b in row]
-        self.assertEqual(len(callbacks), 2)
-        self.assertIn("qoshil", callbacks[0])
-        self.assertIn("tugadi", callbacks[1])
+    def test_jarayonda_always_shows_join_finish_rad(self) -> None:
+        for viewer_id in (10, 99, None):
+            with self.subTest(viewer_id=viewer_id):
+                callbacks = self._jarayonda_callbacks(viewer_id)
+                self.assertEqual(len(callbacks), 3)
+                self.assertIn("act:1:qoshil", callbacks)
+                self.assertIn("act:1:tugadi", callbacks)
+                self.assertIn("act:1:rad", callbacks)
 
 
 class TestConfigBounds(unittest.TestCase):
