@@ -10,10 +10,13 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-DB_NAME = os.getenv("DB_PATH", "/data/orders.db").strip() or "/data/orders.db"
-_db_dir = os.path.dirname(DB_NAME)
-if _db_dir:
-    os.makedirs(_db_dir, exist_ok=True)
+from persist_data import bootstrap_persistence, resolve_db_path
+
+_DB_BOOT = bootstrap_persistence(
+    resolve_db_path(default_filename="orders.db"),
+    legacy_names=("orders.db",),
+)
+DB_NAME = _DB_BOOT["db_path"]
 
 STATUSES = {
     "yangi": "🆕 Yangi",

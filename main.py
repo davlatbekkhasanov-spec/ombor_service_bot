@@ -48,6 +48,8 @@ from ui import (
     service_done_group_card,
     welcome_card,
 )
+from persist_data import persistence_status_line
+from storage import DB_NAME
 from yordamchi_push import push_to_yordamchi_hub, push_to_yordamchi_hub_background, today_iso
 from telegram_safe import run_telegram
 
@@ -475,6 +477,7 @@ async def cmd_seedstatus(message: Message):
 
 async def main():
     global _ticker
+    log.info(persistence_status_line(DB_NAME))
     init_db()
     try:
         from orders_seed import ORDERS_SEED_ROWS, ORDERS_SEED_VERSION
