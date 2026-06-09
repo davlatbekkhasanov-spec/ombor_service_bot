@@ -46,6 +46,15 @@ def settings() -> dict:
     }
 
 
+def admin_notify_id() -> int:
+    """Texnik xabarlar (startup, DB holati) — faqat shu DM."""
+    raw = (os.getenv("REPORT_ADMIN_DM_ID", "1432810519") or "1432810519").strip()
+    try:
+        return int(raw)
+    except ValueError:
+        return 1432810519
+
+
 def is_admin(user_id: int | None) -> bool:
     if user_id is None:
         return False

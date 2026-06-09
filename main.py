@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatType
@@ -10,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Message
 
-from config import is_admin, settings
+from config import admin_notify_id, is_admin, settings
 from live_ticker import LiveTicker, refresh_order_message
 from keyboards import (
     INSTANT_TYPES,
@@ -513,13 +512,9 @@ async def main():
     except Exception:
         log.exception("ombor hub backfill xato")
     try:
-        admin_ids = cfg["admin_ids"]
-        dm = next(iter(admin_ids), None) if admin_ids else None
-        if dm is None:
-            dm = int(os.getenv("REPORT_ADMIN_DM_ID", "1432810519") or "1432810519")
         stats = collect_db_stats(DB_NAME)
         await bot.send_message(
-            dm,
+            admin_notify_id(),
             format_startup_admin_message(stats),
             parse_mode="HTML",
         )
