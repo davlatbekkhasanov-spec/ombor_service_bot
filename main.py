@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatType
@@ -49,6 +50,7 @@ from ui import (
     welcome_card,
 )
 from persist_data import persistence_status_line
+from startup_health import collect_db_stats, format_startup_admin_message
 from storage import DB_NAME
 from yordamchi_push import push_to_yordamchi_hub, push_to_yordamchi_hub_background, today_iso
 from telegram_safe import run_telegram
@@ -331,7 +333,7 @@ async def cb_group_action(call: CallbackQuery):
         push_to_yordamchi_hub_background(
             tg_id=staff_id,
             bot_key="ombor",
-            summary=staff_today_hub_summary(staff_id, day_iso=today_iso()),
+            summary=staff_today_hub_summary(staff_id, today_iso()),
         )
         await call.answer(f"Tugadi! {format_duration(updated)}")
 
@@ -493,20 +495,36 @@ async def main():
     except Exception:
         log.exception("DB holati log xato")
     try:
-        st = stats_today()
         day = today_iso()
+        st = stats_today()
         for row in st.get("by_staff", []):
             uid = int(row.get("staff_id") or 0)
-            sec = int(row.get("total_sec") or 0)
-            if uid and sec > 0:
-                await push_to_yordamchi_hub(
-                    tg_id=uid,
-                    bot_key="ombor",
-                    summary=f"Ombor (bugun jami): ish vaqti {sec} soniya",
-                    day_iso=day,
-                )
+            if not uid:
+                continue
+            summary = staff_today_hub_summary(uid, day)
+            if "0 soniya" in summary and "0 ta" in summary:
+                continue
+            await push_to_yordamchi_hub(
+                tg_id=uid,
+                bot_key="ombor",
+                summary=summary,
+                day_iso=day,
+            )
     except Exception:
         log.exception("ombor hub backfill xato")
+    try:
+        admin_ids = cfg["admin_ids"]
+        dm = next(iter(admin_ids), None) if admin_ids else None
+        if dm is None:
+            dm = int(os.getenv("REPORT_ADMIN_DM_ID", "1432810519") or "1432810519")
+        stats = collect_db_stats(DB_NAME)
+        await bot.send_message(
+            dm,
+            format_startup_admin_message(stats),
+            parse_mode="HTML",
+        )
+    except Exception:
+        log.exception("Startup admin xabari yuborilmadi")
     if GROUP_ID is None:
         log.warning("GROUP_ID sozlanmagan")
     else:
