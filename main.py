@@ -30,6 +30,7 @@ from storage import (
     recent_orders,
     reject_order,
     set_group_message,
+    staff_today_hub_summary,
     stats_all_status,
     stats_today,
 )
@@ -328,10 +329,7 @@ async def cb_group_action(call: CallbackQuery):
         push_to_yordamchi_hub_background(
             tg_id=staff_id,
             bot_key="ombor",
-            summary=(
-                f"#{updated['id']} {updated.get('kind_label', '')}: bajarildi, "
-                f"{format_duration(updated)}"
-            ),
+            summary=staff_today_hub_summary(staff_id, day_iso=today_iso()),
         )
         await call.answer(f"Tugadi! {format_duration(updated)}")
 

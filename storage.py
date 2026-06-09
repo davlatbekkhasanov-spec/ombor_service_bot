@@ -445,6 +445,26 @@ def recent_orders(limit: int = 15) -> list[dict[str, Any]]:
     return [attach_staff(dict(r)) for r in rows]
 
 
+def staff_today_hub_summary(staff_id: int, day: str | None = None) -> str:
+    """Bugun tugagan arizalar — hub uchun to'g'ri jami format."""
+    day_s = (day or datetime.now().strftime("%Y-%m-%d"))[:10]
+    conn = _conn()
+    row = conn.execute(
+        """
+        SELECT COUNT(DISTINCT os.order_id) AS cnt,
+               COALESCE(SUM(COALESCE(o.service_seconds, o.service_minutes * 60, 0)), 0) AS total_sec
+        FROM order_staff os
+        JOIN orders o ON o.id = os.order_id
+        WHERE os.staff_id = ? AND o.status = 'bajarildi' AND o.finished_at LIKE ?
+        """,
+        (int(staff_id), f"{day_s}%"),
+    ).fetchone()
+    conn.close()
+    cnt = int(row["cnt"] or 0) if row else 0
+    sec = int(row["total_sec"] or 0) if row else 0
+    return f"Ombor (bugun jami): {cnt} ta, ish vaqti {sec} soniya"
+
+
 def stats_today() -> dict[str, Any]:
     today = datetime.now().strftime("%Y-%m-%d")
     conn = _conn()
