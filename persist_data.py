@@ -115,3 +115,13 @@ def bootstrap_persistence(
         "migrated_from": migrated_from,
         "startup_backup": backup_file,
     }
+
+
+def persistence_status_line(db_path: str) -> str:
+    vol = has_railway_volume()
+    mount = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "") or "—"
+    size = os.path.getsize(db_path) if os.path.isfile(db_path) else 0
+    return (
+        f"DB: {db_path} ({size // 1024} KB) · "
+        f"Volume: {'✅' if vol else '❌'} ({mount})"
+    )
