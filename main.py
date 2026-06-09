@@ -1,5 +1,13 @@
 import asyncio
+import html
 import logging
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatType
@@ -7,7 +15,7 @@ from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from config import admin_notify_id, is_admin, settings
 from live_ticker import LiveTicker, refresh_order_message
@@ -48,9 +56,20 @@ from ui import (
     service_done_group_card,
     welcome_card,
 )
+from backup_scheduler import run_daily_backup
+from baseline_restore import ensure_baseline_restored
+from db_backup import (
+    export_payload,
+    payload_to_json_bytes,
+    payload_to_orders_csv,
+    restore_all_from_json,
+    write_backup_files,
+)
 from persist_data import persistence_status_line
 from startup_health import collect_db_stats, format_startup_admin_message
 from storage import DB_NAME
+
+TZ = ZoneInfo(os.getenv("TZ", "Asia/Tashkent"))
 from yordamchi_push import push_to_yordamchi_hub, push_to_yordamchi_hub_background, today_iso
 from telegram_safe import run_telegram
 
@@ -476,10 +495,98 @@ async def cmd_seedstatus(message: Message):
     await message.answer("\n".join(lines), parse_mode="HTML")
 
 
+@dp.message(Command("backup"))
+async def cmd_backup(message: Message):
+    if message.chat.type != ChatType.PRIVATE or not is_admin(message.from_user.id):
+        return
+    await message.answer("⏳ Zaxira tayyorlanmoqda…")
+    try:
+        payload = export_payload(DB_NAME)
+        counts = payload.get("counts", {})
+        stamp = datetime.now(TZ).strftime("%Y%m%d_%H%M%S")
+        for name, data in (
+            (f"backup_{stamp}.json", payload_to_json_bytes(payload)),
+            (f"orders_{stamp}.csv", payload_to_orders_csv(payload)),
+        ):
+            await message.answer_document(
+                BufferedInputFile(data, filename=name),
+                caption=name,
+            )
+        lines = [
+            "✅ Zaxira tayyor",
+            f"DB: <code>{html.escape(DB_NAME)}</code>",
+            "",
+            "Jadval yozuvlari:",
+        ]
+        for t, c in counts.items():
+            lines.append(f"  • {t}: {c}")
+        lines.append("")
+        lines.append("Deploydan oldin shu fayllarni saqlang.")
+        lines.append("Tiklash: backup JSON faylini shu chatga yuboring.")
+        await message.answer("\n".join(lines), parse_mode="HTML")
+    except Exception as exc:
+        log.exception("backup")
+        await message.answer(f"❌ Zaxira xato: {html.escape(str(exc))}", parse_mode="HTML")
+
+
+@dp.message(
+    F.document,
+    F.chat.type == ChatType.PRIVATE,
+)
+async def restore_backup_document(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    doc = message.document
+    if not doc or not (doc.file_name or "").lower().endswith(".json"):
+        return
+    tmp = os.path.join(os.path.dirname(DB_NAME) or ".", "_restore_upload.json")
+    try:
+        f = await bot.get_file(doc.file_id)
+        await bot.download_file(f.file_path, tmp)
+        res = await asyncio.to_thread(
+            restore_all_from_json, DB_NAME, tmp, True
+        )
+        if res.get("ok"):
+            await message.answer(
+                "✅ Tiklandi\n"
+                f"Arizalar: {res.get('orders', 0)}\n"
+                f"Xodimlar: {res.get('staff', 0)}",
+                parse_mode="HTML",
+            )
+        else:
+            await message.answer(f"❌ {html.escape(res.get('message', 'xato'))}", parse_mode="HTML")
+    except Exception as exc:
+        log.exception("restore backup")
+        await message.answer(f"❌ Tiklash xato: {html.escape(str(exc))}", parse_mode="HTML")
+    finally:
+        try:
+            if os.path.isfile(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+
+
 async def main():
     global _ticker
     log.info(persistence_status_line(DB_NAME))
+    try:
+        if os.path.isfile(DB_NAME):
+            write_backup_files(DB_NAME, os.path.join(os.path.dirname(DB_NAME) or ".", "backups"))
+    except Exception:
+        log.exception("Startup JSON zaxira xato")
     init_db()
+    try:
+        br = ensure_baseline_restored(DB_NAME)
+        if br.get("restored"):
+            log.warning(
+                "DB tiklandi (%s): %s -> %s ariza",
+                br.get("source"),
+                br.get("before"),
+                br.get("after"),
+            )
+    except Exception:
+        log.exception("Baseline tiklash xato")
+    asyncio.create_task(run_daily_backup(DB_NAME))
     try:
         from orders_seed import ORDERS_SEED_ROWS, ORDERS_SEED_VERSION
 
