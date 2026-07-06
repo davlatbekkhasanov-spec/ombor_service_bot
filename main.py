@@ -633,6 +633,9 @@ async def main():
         log.info("Guruh: %s", GROUP_ID)
         _ticker = LiveTicker(bot, GROUP_ID)
         _ticker.start()
+    from telegram_polling_guard import ensure_polling_mode
+
+    await ensure_polling_mode(bot)
     await dp.start_polling(bot)
     if _ticker:
         _ticker.stop()
