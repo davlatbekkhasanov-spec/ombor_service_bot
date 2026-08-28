@@ -434,6 +434,22 @@ def user_orders(user_id: int, limit: int = 8) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def list_active_service_staff() -> list[dict[str, Any]]:
+    """jarayondagi arizalarda ishlayotgan xodimlar."""
+    conn = _conn()
+    rows = conn.execute(
+        """
+        SELECT os.staff_id, os.staff_name, o.id AS order_id, o.kind_label
+        FROM order_staff os
+        JOIN orders o ON o.id = os.order_id
+        WHERE o.status = 'jarayonda'
+        ORDER BY o.id ASC
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def recent_orders(limit: int = 15) -> list[dict[str, Any]]:
     conn = _conn()
     rows = conn.execute(

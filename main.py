@@ -35,6 +35,7 @@ from storage import (
     get_order,
     init_db,
     join_staff,
+    list_active_service_staff,
     recent_orders,
     reject_order,
     set_group_message,
@@ -70,7 +71,13 @@ from startup_health import collect_db_stats, format_startup_admin_message
 from storage import DB_NAME
 
 TZ = ZoneInfo(os.getenv("TZ", "Asia/Tashkent"))
-from yordamchi_push import push_to_yordamchi_hub, push_to_yordamchi_hub_background, today_iso
+from yordamchi_push import (
+    push_session_end_background,
+    push_session_start_background,
+    push_to_yordamchi_hub,
+    push_to_yordamchi_hub_background,
+    today_iso,
+)
 from telegram_safe import run_telegram
 
 logging.basicConfig(level=logging.INFO)
@@ -95,6 +102,21 @@ def _is_group_chat(chat_id: int) -> bool:
 
 def _staff_name(user) -> str:
     return user.full_name or user.username or f"Xodim {user.id}"
+
+
+def _live_service_start(*, staff_id: int, staff_name: str, order: dict) -> None:
+    push_session_start_background(
+        tg_id=staff_id,
+        bot_key="ombor",
+        user_name=staff_name,
+        activity_type="ombor",
+        metadata={"order_id": int(order.get("id") or 0), "kind": order.get("kind_label") or ""},
+    )
+
+
+def _live_service_end(staff_id: int) -> None:
+    if staff_id:
+        push_session_end_background(tg_id=staff_id, bot_key="ombor", activity_type="ombor")
 
 
 async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> None:
@@ -295,6 +317,7 @@ async def cb_group_action(call: CallbackQuery):
             await call.answer(err, show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)
+        _live_service_start(staff_id=staff_id, staff_name=staff_name, order=updated)
         await call.answer(f"#{order_id} band qilindi")
 
     elif action == "qoshil":
@@ -304,6 +327,7 @@ async def cb_group_action(call: CallbackQuery):
             await call.answer(err, show_alert=True)
             return
         await _refresh_group_message(updated, staff_id)
+        _live_service_start(staff_id=staff_id, staff_name=staff_name, order=updated)
         await call.answer(f"#{order_id} jamoaga qo'shildingiz")
 
     elif action == "tugadi":
@@ -353,6 +377,7 @@ async def cb_group_action(call: CallbackQuery):
             bot_key="ombor",
             summary=staff_today_hub_summary(staff_id, today_iso()),
         )
+        _live_service_end(staff_id)
         await call.answer(f"Tugadi! {format_duration(updated)}")
 
     elif action == "rad":
@@ -384,6 +409,7 @@ async def cb_group_action(call: CallbackQuery):
                 )
             except Exception:
                 pass
+            _live_service_end(staff_id)
             await call.answer("Xizmat bekor qilindi")
             return
         if order["status"] == "rad":
@@ -600,6 +626,26 @@ async def main():
         )
     except Exception:
         log.exception("DB holati log xato")
+    try:
+        active_rows = list_active_service_staff()
+        for row in active_rows:
+            uid = int(row.get("staff_id") or 0)
+            if not uid:
+                continue
+            push_session_start_background(
+                tg_id=uid,
+                bot_key="ombor",
+                user_name=row.get("staff_name") or "",
+                activity_type="ombor",
+                metadata={
+                    "order_id": int(row.get("order_id") or 0),
+                    "kind": row.get("kind_label") or "",
+                },
+            )
+        if active_rows:
+            log.info("Live hub sync: %s faol xizmat xodimi", len(active_rows))
+    except Exception:
+        log.exception("ombor live hub sync xato")
     try:
         day = today_iso()
         st = stats_today()
