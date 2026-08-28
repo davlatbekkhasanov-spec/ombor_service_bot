@@ -29,6 +29,7 @@ from keyboards import (
 )
 from storage import (
     assign_to_staff,
+    attach_staff,
     cancel_service_order,
     complete_order,
     create_order,
@@ -39,6 +40,7 @@ from storage import (
     recent_orders,
     reject_order,
     set_group_message,
+    staff_ids_on_order,
     staff_today_hub_summary,
     stats_all_status,
     stats_today,
@@ -117,6 +119,28 @@ def _live_service_start(*, staff_id: int, staff_name: str, order: dict) -> None:
 def _live_service_end(staff_id: int) -> None:
     if staff_id:
         push_session_end_background(tg_id=staff_id, bot_key="ombor", activity_type="ombor")
+
+
+def _live_service_end_for_order(order: dict) -> None:
+    seen: set[int] = set()
+    for sid in staff_ids_on_order(int(order.get("id") or 0)):
+        if sid not in seen:
+            _live_service_end(sid)
+            seen.add(sid)
+    lead = int(order.get("assigned_to_id") or 0)
+    if lead and lead not in seen:
+        _live_service_end(lead)
+
+
+def _reconcile_hub_live_sessions() -> None:
+    from hub_live_sync import reconcile_hub_live_sessions
+
+    reconcile_hub_live_sessions()
+
+
+async def _answer_stale_order(call: CallbackQuery, order: dict, err: str) -> None:
+    await _refresh_group_message(order, call.from_user.id, force=True)
+    await call.answer(f"{err}\n(Xabar yangilandi)", show_alert=True)
 
 
 async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> None:
@@ -310,6 +334,12 @@ async def cb_group_action(call: CallbackQuery):
     staff_id = call.from_user.id
     staff_name = _staff_name(call.from_user)
 
+    order = get_order(order_id)
+    if not order:
+        await call.answer("Ariza topilmadi", show_alert=True)
+        return
+    order = attach_staff(order)
+
     if action == "band":
         updated, err = assign_to_staff(order_id, staff_id, staff_name)
         if err:
@@ -323,20 +353,17 @@ async def cb_group_action(call: CallbackQuery):
     elif action == "qoshil":
         updated, err = join_staff(order_id, staff_id, staff_name)
         if err:
-            await _sync_group_order(order_id, staff_id)
-            await call.answer(err, show_alert=True)
+            fresh = attach_staff(get_order(order_id) or order)
+            await _answer_stale_order(call, fresh, err)
             return
         await _refresh_group_message(updated, staff_id)
         _live_service_start(staff_id=staff_id, staff_name=staff_name, order=updated)
         await call.answer(f"#{order_id} jamoaga qo'shildingiz")
 
     elif action == "tugadi":
-        order = get_order(order_id)
-        if not order:
-            await call.answer("Ariza topilmadi", show_alert=True)
-            return
         if order["status"] == "bajarildi":
-            await _refresh_group_message(order, staff_id)
+            _live_service_end_for_order(order)
+            await _refresh_group_message(order, staff_id, force=True)
             await call.answer("Bu ariza allaqachon tugagan", show_alert=True)
             return
         if order["status"] == "yangi":
@@ -346,15 +373,17 @@ async def cb_group_action(call: CallbackQuery):
             )
             return
         if order["status"] != "jarayonda":
-            await _refresh_group_message(order, staff_id)
-            await call.answer("Bu ariza yopilgan", show_alert=True)
+            _live_service_end_for_order(order)
+            await _answer_stale_order(call, order, "Bu ariza yopilgan")
             return
         updated, err = complete_order(order_id, staff_id)
         if err:
-            await _refresh_group_message(order, staff_id)
-            await call.answer(err, show_alert=True)
+            fresh = attach_staff(get_order(order_id) or order)
+            if fresh.get("status") in ("bajarildi", "rad"):
+                _live_service_end_for_order(fresh)
+            await _answer_stale_order(call, fresh, err)
             return
-        await _refresh_group_message(updated, staff_id)
+        await _refresh_group_message(updated, staff_id, force=True)
         try:
             await bot.send_message(
                 GROUP_ID,
@@ -377,16 +406,13 @@ async def cb_group_action(call: CallbackQuery):
             bot_key="ombor",
             summary=staff_today_hub_summary(staff_id, today_iso()),
         )
-        _live_service_end(staff_id)
+        _live_service_end_for_order(updated)
         await call.answer(f"Tugadi! {format_duration(updated)}")
 
     elif action == "rad":
-        order = get_order(order_id)
-        if not order:
-            await call.answer("Ariza topilmadi", show_alert=True)
-            return
         if order["status"] == "bajarildi":
-            await _refresh_group_message(order, staff_id)
+            _live_service_end_for_order(order)
+            await _refresh_group_message(order, staff_id, force=True)
             await call.answer("Bu ariza allaqachon tugagan", show_alert=True)
             return
         if order["status"] == "jarayonda":
@@ -396,10 +422,10 @@ async def cb_group_action(call: CallbackQuery):
                 admin=is_admin(staff_id),
             )
             if not updated:
-                await _refresh_group_message(order, staff_id)
-                await call.answer(err or "Rad etib bo'lmadi", show_alert=True)
+                fresh = attach_staff(get_order(order_id) or order)
+                await _answer_stale_order(call, fresh, err or "Rad etib bo'lmadi")
                 return
-            await _refresh_group_message(updated, staff_id)
+            await _refresh_group_message(updated, staff_id, force=True)
             try:
                 await bot.send_message(
                     updated["user_id"],
@@ -409,19 +435,20 @@ async def cb_group_action(call: CallbackQuery):
                 )
             except Exception:
                 pass
-            _live_service_end(staff_id)
+            _live_service_end_for_order(updated)
             await call.answer("Xizmat bekor qilindi")
             return
         if order["status"] == "rad":
-            await _refresh_group_message(order, staff_id)
+            _live_service_end_for_order(order)
+            await _refresh_group_message(order, staff_id, force=True)
             await call.answer("Allaqachon rad etilgan", show_alert=True)
             return
         updated = reject_order(order_id)
         if not updated:
-            await _sync_group_order(order_id, staff_id)
-            await call.answer("Rad etib bo'lmadi", show_alert=True)
+            fresh = attach_staff(get_order(order_id) or order)
+            await _answer_stale_order(call, fresh, "Rad etib bo'lmadi")
             return
-        await _refresh_group_message(updated, staff_id)
+        await _refresh_group_message(updated, staff_id, force=True)
         try:
             await bot.send_message(
                 updated["user_id"],
@@ -644,6 +671,7 @@ async def main():
             )
         if active_rows:
             log.info("Live hub sync: %s faol xizmat xodimi", len(active_rows))
+        _reconcile_hub_live_sessions()
     except Exception:
         log.exception("ombor live hub sync xato")
     try:

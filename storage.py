@@ -305,6 +305,12 @@ def join_staff(
     if not order:
         return None, "Ariza topilmadi"
     if order["status"] != "jarayonda":
+        if order["status"] == "bajarildi":
+            return None, "Bu ariza allaqachon tugagan"
+        if order["status"] == "rad":
+            return None, "Bu ariza rad etilgan"
+        if order["status"] == "yangi":
+            return None, "Avval «Men xizmat ko'rsataman» bosing"
         return None, "Bu ariza xizmatda emas"
     if is_staff_on_order(order_id, staff_id):
         return None, "Siz allaqachon bu jamoadasiz"
@@ -325,6 +331,25 @@ def join_staff(
     return attach_staff(dict(row)), None
 
 
+def ensure_staff_membership(
+    order_id: int,
+    staff_id: int,
+    staff_name: str,
+    *,
+    is_lead: bool = False,
+) -> None:
+    if is_staff_on_order(order_id, staff_id):
+        return
+    conn = _conn()
+    _add_staff_member(conn, order_id, staff_id, staff_name, is_lead=is_lead)
+    conn.commit()
+    conn.close()
+
+
+def staff_ids_on_order(order_id: int) -> set[int]:
+    return {int(s["staff_id"]) for s in get_order_staff(order_id)}
+
+
 def complete_order(
     order_id: int,
     staff_id: int,
@@ -337,9 +362,19 @@ def complete_order(
             return None, "Bu ariza allaqachon tugagan"
         if order["status"] == "yangi":
             return None, "Avval «Men xizmat ko'rsataman» bosing"
+        if order["status"] == "rad":
+            return None, "Bu ariza rad etilgan"
         return None, "Bu ariza yopilgan"
     if not is_staff_on_order(order_id, staff_id):
-        return None, "Avval «Qo'shilaman» yoki band qiling"
+        if int(order.get("assigned_to_id") or 0) == int(staff_id):
+            ensure_staff_membership(
+                order_id,
+                staff_id,
+                str(order.get("assigned_to") or "Xodim"),
+                is_lead=True,
+            )
+        else:
+            return None, "Avval «Qo'shilaman» yoki band qiling"
 
     now = _now()
     start_at = order.get("assigned_at") or order.get("created_at")

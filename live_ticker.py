@@ -48,7 +48,8 @@ async def refresh_order_message(
         _last_edit_at.pop(fresh["id"], None)
 
     now = time.monotonic()
-    if not force:
+    force_edit = force or not is_live
+    if not force_edit:
         last = _last_edit_at.get(fresh["id"], 0.0)
         interval = _live_edit_interval() if is_live else 5.0
         if now - last < interval:
@@ -67,7 +68,7 @@ async def refresh_order_message(
         )
         return True
 
-    ok = await run_telegram(_edit, label=f"edit #{fresh['id']}", force=force)
+    ok = await run_telegram(_edit, label=f"edit #{fresh['id']}", force=force_edit)
     if ok:
         _last_edit_at[fresh["id"]] = now
         return True
@@ -108,6 +109,12 @@ class LiveTicker:
 
     async def tick_once(self, *, force: bool = False) -> None:
         await refresh_all_live(self._bot, self._group_id, force=force)
+        try:
+            from hub_live_sync import reconcile_hub_live_sessions
+
+            reconcile_hub_live_sessions()
+        except Exception:
+            pass
 
     async def _loop(self) -> None:
         tick = settings()["tick_sec"]
