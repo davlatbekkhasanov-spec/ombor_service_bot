@@ -18,7 +18,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from config import admin_notify_id, is_admin, settings
-from live_ticker import LiveTicker, refresh_order_message
+from live_ticker import LiveTicker, refresh_all_live, refresh_order_message
 from keyboards import (
     INSTANT_TYPES,
     REQUEST_TYPES,
@@ -143,7 +143,12 @@ async def _answer_stale_order(call: CallbackQuery, order: dict, err: str) -> Non
     await call.answer(f"{err}\n(Xabar yangilandi)", show_alert=True)
 
 
-async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> None:
+async def _refresh_group_message(
+    order: dict,
+    viewer_id: int | None = None,
+    *,
+    force: bool = True,
+) -> None:
     if not GROUP_ID:
         return
     await refresh_order_message(
@@ -151,7 +156,7 @@ async def _refresh_group_message(order: dict, viewer_id: int | None = None) -> N
         GROUP_ID,
         order,
         viewer_id=viewer_id,
-        force=True,
+        force=force,
     )
 
 
@@ -335,6 +340,17 @@ async def _clear_stale_group_order(call: CallbackQuery, order_id: int) -> None:
 
 @dp.callback_query(F.data.startswith("act:"))
 async def cb_group_action(call: CallbackQuery):
+    try:
+        await _cb_group_action(call)
+    except Exception:
+        log.exception("Guruh tugmasi xato: %s", call.data)
+        try:
+            await call.answer("Xatolik — qayta bosing", show_alert=True)
+        except Exception:
+            pass
+
+
+async def _cb_group_action(call: CallbackQuery):
     if call.message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         await call.answer("Faqat guruhda", show_alert=True)
         return
@@ -728,6 +744,12 @@ async def main():
         log.info("Guruh: %s", GROUP_ID)
         _ticker = LiveTicker(bot, GROUP_ID)
         _ticker.start()
+        try:
+            n = await refresh_all_live(bot, GROUP_ID, force=True)
+            if n:
+                log.info("Startup: %s ta faol ariza guruhi yangilandi", n)
+        except Exception:
+            log.exception("Startup live arizalar yangilash xato")
     from telegram_polling_guard import ensure_polling_mode
 
     await ensure_polling_mode(bot)
