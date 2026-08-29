@@ -316,6 +316,23 @@ async def save_text_order(message: Message, state: FSMContext):
     )
 
 
+async def _clear_stale_group_order(call: CallbackQuery, order_id: int) -> None:
+    """Bazada yo'q eski guruh xabarini tugmasiz qilish."""
+    if not call.message or not GROUP_ID:
+        return
+    try:
+        await bot.edit_message_text(
+            f"⚠️ <b>Ariza #{order_id}</b> bazada topilmadi.\n"
+            "Eski xabar — yangi so'rov yuboring.",
+            chat_id=GROUP_ID,
+            message_id=call.message.message_id,
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+    except Exception:
+        pass
+
+
 @dp.callback_query(F.data.startswith("act:"))
 async def cb_group_action(call: CallbackQuery):
     if call.message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
@@ -336,7 +353,11 @@ async def cb_group_action(call: CallbackQuery):
 
     order = get_order(order_id)
     if not order:
-        await call.answer("Ariza topilmadi", show_alert=True)
+        await _clear_stale_group_order(call, order_id)
+        await call.answer(
+            f"Ariza #{order_id} bazada yo'q (eski xabar yangilandi)",
+            show_alert=True,
+        )
         return
     order = attach_staff(order)
 

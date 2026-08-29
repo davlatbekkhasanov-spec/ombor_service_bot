@@ -42,7 +42,12 @@ async def refresh_order_message(
     if flood_paused() and not force:
         return False
 
-    fresh = get_order(order["id"]) or order
+    fresh = get_order(order["id"])
+    if not fresh:
+        _last_edit_at.pop(order["id"], None)
+        if not force:
+            return False
+        fresh = order
     is_live = fresh["status"] in ("yangi", "jarayonda")
     if not is_live:
         _last_edit_at.pop(fresh["id"], None)
